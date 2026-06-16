@@ -8,8 +8,9 @@ Android 手持终端应用，对接 RMA 后端 API，用于仓库现场作业（
 |------|------|------|
 | 登录 | ✅ | 调用 RMA `POST /api/auth/login`，JWT 鉴权 |
 | 会话管理 | ✅ | DataStore 持久化 Token，OkHttp 自动附加 `Authorization` |
-| 仓库列表 | 🔧 | API 与 Repository 已接入，首页 UI 待完善 |
-| 首页 | 🚧 | 登录成功后占位页，后续替换为业务首页 |
+| 首页 | ✅ | 问候语、仓库切换、退出登录 |
+| 仓库列表 | ✅ | 拉取仓库列表，DataStore 记住上次选择 |
+| Dock Receive | 🚧 | 首页磁贴已预留，功能开发中 |
 
 ## 技术栈
 
@@ -39,6 +40,7 @@ app/src/main/kotlin/com/pda/app/
 │   └── session/               # SessionManager
 └── ui/
     ├── login/                 # LoginScreen + LoginViewModel
+    ├── home/                  # HomeScreen + HomeViewModel（仓库切换、功能入口）
     └── theme/
 ```
 
@@ -119,7 +121,8 @@ Logcat 使用 `PDA` 前缀过滤：
 |-----|------|
 | `PDA/OkHttp` | HTTP 请求/响应（仅 Debug） |
 | `PDA/AuthRepository` | 登录流程 |
-| `PDA/LoginViewModel` | UI 状态流转 |
+| `PDA/LoginViewModel` | 登录 UI 状态流转 |
+| `PDA/HomeViewModel` | 首页仓库加载与切换 |
 
 密码不会写入日志。
 
