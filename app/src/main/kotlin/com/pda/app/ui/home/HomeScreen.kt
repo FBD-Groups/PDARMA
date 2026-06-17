@@ -50,6 +50,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun HomeScreen(
     onLogout: () -> Unit,
+    onNavigateToDockReceiving: (Int) -> Unit,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -164,10 +165,15 @@ fun HomeScreen(
                 ActionTile(
                     label = "Dock Receive",
                     icon = Icons.Default.MoveToInbox,
-                    enabled = true,
+                    enabled = uiState.selectedWarehouse != null,
                     modifier = Modifier.weight(1f)
                 ) {
-                    scope.launch { snackbarHostState.showSnackbar("功能开发中") }
+                    val wh = uiState.selectedWarehouse
+                    if (wh == null) {
+                        scope.launch { snackbarHostState.showSnackbar("请先选择仓库") }
+                    } else {
+                        onNavigateToDockReceiving(wh.id)
+                    }
                 }
                 Card(modifier = Modifier.weight(1f).height(100.dp)) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

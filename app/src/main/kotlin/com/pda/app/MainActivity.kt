@@ -8,9 +8,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.ui.Modifier
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
+import com.pda.app.ui.dockreceiving.DockReceivingScreen
 import com.pda.app.ui.home.HomeScreen
 import com.pda.app.ui.login.LoginScreen
 import com.pda.app.ui.theme.PdaTheme
@@ -45,8 +48,17 @@ class MainActivity : ComponentActivity() {
                                     navController.navigate("login") {
                                         popUpTo("home") { inclusive = true }
                                     }
+                                },
+                                onNavigateToDockReceiving = { warehouseId ->
+                                    navController.navigate("dock-receiving/$warehouseId")
                                 }
                             )
+                        }
+                        composable(
+                            route = "dock-receiving/{warehouseId}",
+                            arguments = listOf(navArgument("warehouseId") { type = NavType.StringType })
+                        ) {
+                            DockReceivingScreen(onBack = { navController.popBackStack() })
                         }
                     }
                 }
