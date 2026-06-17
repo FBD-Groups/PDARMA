@@ -191,9 +191,13 @@ private fun CameraCapture(
             setEnabledUseCases(CameraController.IMAGE_CAPTURE)
         }
     }
+    val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
     DisposableEffect(lifecycleOwner) {
         controller.bindToLifecycle(lifecycleOwner)
-        onDispose { controller.unbind() }
+        onDispose {
+            controller.unbind()
+            cameraExecutor.shutdown()
+        }
     }
 
     Column(modifier = modifier) {
@@ -203,7 +207,7 @@ private fun CameraCapture(
         )
         Spacer(Modifier.height(8.dp))
         Button(
-            onClick = { capturePhoto(context, controller, onPhotoCaptured) },
+            onClick = { capturePhoto(context, controller, cameraExecutor, onPhotoCaptured) },
             modifier = Modifier.fillMaxWidth()
         ) {
             Icon(Icons.Default.CameraAlt, contentDescription = null)
@@ -216,13 +220,14 @@ private fun CameraCapture(
 private fun capturePhoto(
     context: Context,
     controller: LifecycleCameraController,
+    executor: java.util.concurrent.ExecutorService,
     onPhotoCaptured: (File) -> Unit
 ) {
     val file = File.createTempFile("capture", ".jpg", context.cacheDir)
     val output = ImageCapture.OutputFileOptions.Builder(file).build()
     controller.takePicture(
         output,
-        Executors.newSingleThreadExecutor(),
+        executor,
         object : ImageCapture.OnImageSavedCallback {
             override fun onImageSaved(results: ImageCapture.OutputFileResults) {
                 onPhotoCaptured(file)

@@ -129,8 +129,10 @@ class DockReceivingViewModel @Inject constructor(
     fun onConditionChanged(v: String) =
         _uiState.update { it.copy(confirm = it.confirm?.copy(condition = v)) }
 
-    fun cancelConfirm() =
+    fun cancelConfirm() {
+        _uiState.value.confirm?.photoFile?.delete()
         _uiState.update { it.copy(phase = Phase.Recording, confirm = null) }
+    }
 
     fun saveItem() {
         val state = _uiState.value
@@ -154,6 +156,7 @@ class DockReceivingViewModel @Inject constructor(
                 when (result) {
                     is NetworkResult.Loading -> {}
                     is NetworkResult.Success -> {
+                        c.photoFile.delete()
                         _uiState.update { it.copy(phase = Phase.Recording, confirm = null, message = "已录入") }
                         refreshItems(bid)
                     }
