@@ -129,6 +129,10 @@ private fun RecordingContent(
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
+        // 状态条（件数 + 上传/识别/已保存）放在最上方。
+        RecordingStatusBar(state)
+        Spacer(Modifier.height(8.dp))
+
         // Confirm fields on top (after capture).
         state.confirm?.let { confirm ->
             ConfirmFields(
@@ -160,46 +164,51 @@ private fun RecordingBottomBar(
     onCloseBatch: () -> Unit
 ) {
     Surface(tonalElevation = 3.dp) {
-        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(
-                    onClick = onCloseBatch,
-                    enabled = !state.isBusy,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.weight(1f).height(48.dp)
-                ) { Text("Close Batch", maxLines = 1) }
-                Button(
-                    onClick = onConfirm,
-                    enabled = state.confirm?.canSave == true,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.weight(1f).height(48.dp)
-                ) {
-                    if (state.confirm?.saving == true)
-                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                    else Text("Confirm", maxLines = 1)
-                }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            OutlinedButton(
+                onClick = onCloseBatch,
+                enabled = !state.isBusy,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.weight(1f).height(48.dp)
+            ) { Text("Close Batch", maxLines = 1) }
+            Button(
+                onClick = onConfirm,
+                enabled = state.confirm?.canSave == true,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.weight(1f).height(48.dp)
+            ) {
+                if (state.confirm?.saving == true)
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                else Text("Confirm", maxLines = 1)
             }
-            Spacer(Modifier.height(6.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("${state.itemCount} items", fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.weight(1f))
-                val c = state.confirm
-                when {
-                    c?.uploading == true -> ProcessingStatus("Uploading…")
-                    c?.analyzing == true -> ProcessingStatus("Analyzing…")
-                    c?.uploadFailed == true -> Text(
-                        "Upload failed — retake",
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    state.recentlySaved -> Text(
-                        "Saved",
-                        color = MaterialTheme.colorScheme.primary,
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            }
+        }
+    }
+}
+
+/** 顶部状态条：件数 + 当前上传/识别/已保存状态。 */
+@Composable
+private fun RecordingStatusBar(state: DockReceivingUiState) {
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text("${state.itemCount} items", fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.weight(1f))
+        val c = state.confirm
+        when {
+            c?.uploading == true -> ProcessingStatus("Uploading…")
+            c?.analyzing == true -> ProcessingStatus("Analyzing…")
+            c?.uploadFailed == true -> Text(
+                "Upload failed — retake",
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall
+            )
+            state.recentlySaved -> Text(
+                "Saved",
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.SemiBold
+            )
         }
     }
 }
@@ -352,11 +361,12 @@ private fun ConfirmFields(
             onValueChange = onTrackingChange,
             label = { Text("Tracking #") },
             singleLine = true,
+            textStyle = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.fillMaxWidth()
         )
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(8.dp))
         DropdownField("Carrier", confirm.carrier, CARRIERS, onCarrierChange)
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(8.dp))
         DropdownField("Condition", confirm.condition, CONDITIONS, onConditionChange)
     }
 }
@@ -376,6 +386,7 @@ private fun DropdownField(
             onValueChange = {},
             readOnly = true,
             label = { Text(label) },
+            textStyle = MaterialTheme.typography.bodyMedium,
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
             modifier = Modifier.menuAnchor().fillMaxWidth()
         )
