@@ -130,7 +130,6 @@ fun DockReceivingScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun IdleContent(
     busy: Boolean,
@@ -150,14 +149,22 @@ private fun IdleContent(
             modifier = Modifier.fillMaxWidth()
         )
         Spacer(Modifier.height(8.dp))
-        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-            InputMethod.entries.forEachIndexed { index, m ->
-                SegmentedButton(
-                    selected = method == m,
-                    onClick = { onMethodChange(m) },
-                    enabled = !busy,
-                    shape = SegmentedButtonDefaults.itemShape(index, InputMethod.entries.size)
-                ) { Text(m.label) }
+        Column(modifier = Modifier.fillMaxWidth()) {
+            InputMethod.entries.forEach { m ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(enabled = !busy) { onMethodChange(m) }
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RadioButton(
+                        selected = m == method,
+                        onClick = { onMethodChange(m) },
+                        enabled = !busy
+                    )
+                    Text(m.label, style = MaterialTheme.typography.bodyLarge)
+                }
             }
         }
 
@@ -188,7 +195,8 @@ private fun RecordingContent(
         RecordingStatusBar(state)
         Spacer(Modifier.height(8.dp))
 
-        // Confirm fields on top (after capture).
+        // Only show confirm fields for the current capture — no accumulated item list.
+        // Item count is already visible in the status bar above.
         state.confirm?.let { confirm ->
             ConfirmFields(
                 confirm = confirm,
@@ -199,17 +207,11 @@ private fun RecordingContent(
             Spacer(Modifier.height(8.dp))
         }
 
-        // Recorded items.
-        if (state.items.isNotEmpty()) {
-            state.items.forEach { item -> RecordedItemRow(item) }
-        }
-
-        // 弹性留白：把相机块顶到底部，紧贴下方按钮（空状态时空白在预览上方而非下方）。
+        // Push camera to the bottom regardless of whether confirm fields are showing.
         Spacer(Modifier.weight(1f))
 
         CameraCapture(
             modifier = Modifier.fillMaxWidth(),
-            // 确认字段出现时预览压小，保证快门仍可见；瞄准时用大预览。
             previewHeight = if (state.confirm != null) 220.dp else 320.dp,
             onPhotoCaptured = onPhotoCaptured
         )
@@ -262,9 +264,7 @@ private fun ScanContent(
 
         ScanInputField(onScan = onScan)
 
-        Spacer(Modifier.height(12.dp))
-        Text("Recorded (${state.itemCount})", fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(8.dp))
         // 最新的在最上面。
         LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
             items(state.items.asReversed(), key = { it.receivingItemId }) { item ->
@@ -284,73 +284,68 @@ private fun ScanInputField(onScan: (String) -> Unit) {
     val context = LocalContext.current
     val imm = remember { context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager }
 
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            "Tracking # (scan / type, double-tap for keyboard)",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.primary
-        )
-        Spacer(Modifier.height(4.dp))
-        Surface(
-            shape = RoundedCornerShape(12.dp),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-            color = Color.Transparent,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            AndroidView(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
-                factory = { ctx ->
-                    EditText(ctx).apply {
-                        hint = "Scan or enter tracking #…"
-                        isSingleLine = true
-                        background = null
-                        textSize = 18f
-                        imeOptions = EditorInfo.IME_ACTION_DONE
-                        inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-                        // 关键：聚焦不弹软键盘（扫码枪走硬件按键），只有双击才显式调出。
-                        showSoftInputOnFocus = false
-                        setOnEditorActionListener { v, actionId, _ ->
-                            if (actionId == EditorInfo.IME_ACTION_DONE) {
-                                val t = v.text.toString().trim()
-                                if (t.isNotEmpty()) {
-                                    onScan(t)
-                                    (v as EditText).setText("")
-                                }
-                                showSoftInputOnFocus = false
-                                imm.hideSoftInputFromWindow(v.windowToken, 0)
-                                true
-                            } else false
-                        }
-                        val gesture = GestureDetector(ctx, object : GestureDetector.SimpleOnGestureListener() {
-                            override fun onDoubleTap(e: MotionEvent): Boolean {
-                                // 双击切换软键盘：未显示则调出，已显示则收起。
-                                if (showSoftInputOnFocus) {
-                                    showSoftInputOnFocus = false
-                                    imm.hideSoftInputFromWindow(windowToken, 0)
-                                } else {
-                                    showSoftInputOnFocus = true
-                                    requestFocus()
-                                    imm.showSoftInput(this@apply, InputMethodManager.SHOW_IMPLICIT)
-                                }
-                                return true
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        color = Color.Transparent,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        AndroidView(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+            factory = { ctx ->
+                EditText(ctx).apply {
+                    hint = "Scan or enter tracking #…"
+                    isSingleLine = true
+                    background = null
+                    textSize = 18f
+                    imeOptions = EditorInfo.IME_ACTION_DONE
+                    inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                    showSoftInputOnFocus = false
+                    setOnEditorActionListener { v, actionId, _ ->
+                        if (actionId == EditorInfo.IME_ACTION_DONE) {
+                            val t = v.text.toString().trim()
+                            if (t.isNotEmpty()) {
+                                onScan(t)
+                                (v as EditText).setText("")
                             }
-                        })
-                        setOnTouchListener { _, ev -> gesture.onTouchEvent(ev); false }
-                        post { requestFocus() }
+                            showSoftInputOnFocus = false
+                            imm.hideSoftInputFromWindow(v.windowToken, 0)
+                            true
+                        } else false
                     }
+                    val gesture = GestureDetector(ctx, object : GestureDetector.SimpleOnGestureListener() {
+                        override fun onDoubleTap(e: MotionEvent): Boolean {
+                            if (showSoftInputOnFocus) {
+                                showSoftInputOnFocus = false
+                                imm.hideSoftInputFromWindow(windowToken, 0)
+                            } else {
+                                showSoftInputOnFocus = true
+                                requestFocus()
+                                imm.showSoftInput(this@apply, InputMethodManager.SHOW_IMPLICIT)
+                            }
+                            return true
+                        }
+                    })
+                    setOnTouchListener { _, ev -> gesture.onTouchEvent(ev); false }
+                    post { requestFocus() }
                 }
-            )
-        }
+            }
+        )
     }
 }
 
-/** 扫码列表行，格式参考 Receive Report：运单号 + 承运商/需复核。 */
+private val ScanItemDot = Color(0xFF1D9E75)
+
 @Composable
 private fun ScanItemRow(item: ReceivingItemUi) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(ScanItemDot))
+        Spacer(Modifier.width(10.dp))
         Text(
             item.trackingNo.ifBlank { "(no tracking #)" },
             fontFamily = FontFamily.Monospace,
@@ -363,7 +358,7 @@ private fun ScanItemRow(item: ReceivingItemUi) {
         } else if (item.carrier.isNotBlank()) {
             Text(
                 item.carrier,
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
@@ -375,7 +370,7 @@ private fun ScanItemRow(item: ReceivingItemUi) {
 private fun ScanBottomBar(onCloseBatch: () -> Unit) {
     Surface(tonalElevation = 3.dp) {
         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-            OutlinedButton(
+            Button(
                 onClick = onCloseBatch,
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth().height(48.dp)
@@ -425,23 +420,6 @@ private fun ProcessingStatus(text: String) {
             color = MaterialTheme.colorScheme.primary
         )
     }
-}
-
-@Composable
-private fun RecordedItemRow(item: ReceivingItemUi) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(item.trackingNo.ifBlank { "(no tracking #)" }, fontWeight = FontWeight.Medium)
-            Text(item.carrier.ifBlank { "—" }, style = MaterialTheme.typography.bodySmall)
-        }
-        if (item.needsReview) {
-            Icon(Icons.Default.Warning, contentDescription = "Needs review", tint = MaterialTheme.colorScheme.error)
-        }
-    }
-    HorizontalDivider()
 }
 
 @Composable
