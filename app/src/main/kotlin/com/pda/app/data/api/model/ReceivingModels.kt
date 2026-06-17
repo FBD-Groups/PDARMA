@@ -1,6 +1,7 @@
 package com.pda.app.data.api.model
 
 import kotlinx.serialization.Serializable
+import java.time.LocalDateTime
 
 // ── Requests ──────────────────────────────────────────────────────────────────
 
@@ -57,6 +58,19 @@ data class ReceivingItemDto(
     val needsReview: Boolean? = null
 )
 
+/** GET /api/receiving-batches 返回的批次行（Receive Report 用）。 */
+@Serializable
+data class ReceivingBatchDto(
+    val receivingBatchId: Int,
+    val batchNumber: String,
+    val warehouseId: Int? = null,
+    val status: String? = null,
+    val startTime: String? = null,
+    val endTime: String? = null,
+    val createdUser: String? = null,
+    val itemCount: Int = 0
+)
+
 // ── Clean domain models (UI never sees raw DTOs) ────────────────────────────────
 
 data class BatchInfo(val batchId: Int, val batchNumber: String)
@@ -73,4 +87,12 @@ data class ReceivingItemUi(
     val trackingNo: String,
     val carrier: String,
     val needsReview: Boolean
+)
+
+/** 一条已收货批次（Receive Report 用）。receivedAt = 后端 EndTime（关批时间）。 */
+data class ReceivedBatch(
+    val receivingBatchId: Int,
+    val batchNumber: String,
+    val receivedAt: LocalDateTime,
+    val itemCount: Int
 )

@@ -8,6 +8,7 @@ import com.pda.app.data.api.model.CreateBatchRequest
 import com.pda.app.data.api.model.CreateBatchResponse
 import com.pda.app.data.api.model.CreateItemRequest
 import com.pda.app.data.api.model.CreateItemResponse
+import com.pda.app.data.api.model.ReceivingBatchDto
 import com.pda.app.data.api.model.ReceivingItemDto
 import com.pda.app.data.api.model.ShippingAnalyzeResponse
 import com.pda.app.data.api.model.UploadPhotosResponse
@@ -28,7 +29,8 @@ private class FakeReceivingApiService(
     var analyzeResp: Response<ShippingAnalyzeResponse>? = null,
     var createItemResp: Response<CreateItemResponse>? = null,
     var getItemsResp: Response<List<ReceivingItemDto>>? = null,
-    var closeResp: Response<CloseBatchResponse>? = null
+    var closeResp: Response<CloseBatchResponse>? = null,
+    var getBatchesResp: Response<List<ReceivingBatchDto>>? = null
 ) : ReceivingApiService {
     override suspend fun createBatch(req: CreateBatchRequest) = createBatchResp!!
     override suspend fun uploadPhotos(file: MultipartBody.Part) = uploadResp!!
@@ -36,6 +38,7 @@ private class FakeReceivingApiService(
     override suspend fun createItem(req: CreateItemRequest) = createItemResp!!
     override suspend fun getItems(batchId: Int) = getItemsResp!!
     override suspend fun closeBatch(id: Int) = closeResp!!
+    override suspend fun getBatches(warehouseId: Int?, scanUser: String?, scanDateFrom: String?) = getBatchesResp!!
 }
 
 private fun jsonBody(s: String) = s.toResponseBody("application/json".toMediaType())
@@ -77,7 +80,7 @@ class ReceivingRepositoryTest {
         val repo = ReceivingRepository(api)
 
         val error = repo.createBatch(7).toList()[1] as NetworkResult.Error
-        assertEquals("无权限，请联系管理员", error.message)
+        assertEquals("No permission, contact your administrator", error.message)
     }
 
     @Test
@@ -97,7 +100,7 @@ class ReceivingRepositoryTest {
         val repo = ReceivingRepository(api)
 
         val error = repo.uploadPhoto(byteArrayOf(1), "x.jpg").toList()[1] as NetworkResult.Error
-        assertEquals("图片上传失败：未返回有效 URL", error.message)
+        assertEquals("Photo upload failed: no URL returned", error.message)
     }
 
     @Test
@@ -152,5 +155,28 @@ class ReceivingRepositoryTest {
 
         val emissions = repo.closeBatch(42).toList()
         assertTrue(emissions[1] is NetworkResult.Success)
+    }
+
+    @Test
+    fun `getReceivedBatches keeps non-empty closed batches and maps id`() = runTest {
+        val api = FakeReceivingApiService(
+            getBatchesResp = Response.success(
+                listOf(
+                    // 后端实际格式为空格分隔 "yyyy-MM-dd HH:mm:ss"（无 'T'）
+                    ReceivingBatchDto(11, "B-1", status = "Closed", endTime = "2026-06-17 10:30:00", itemCount = 5),
+                    ReceivingBatchDto(12, "B-2", status = "Open", endTime = null, itemCount = 0),
+                    ReceivingBatchDto(13, "B-3", status = "Dispatched", endTime = "2026-06-16 09:00:00", itemCount = 3),
+                    ReceivingBatchDto(14, "B-4", status = "Closed", endTime = "2026-06-17 11:00:00", itemCount = 0)
+                )
+            )
+        )
+        val repo = ReceivingRepository(api)
+
+        val success = repo.getReceivedBatches(7, "alice", "2026-06-14").toList()[1] as NetworkResult.Success
+        // B-2 被状态过滤；B-4 被 0 件过滤；只剩 B-1、B-3
+        assertEquals(listOf("B-1", "B-3"), success.data.map { it.batchNumber })
+        assertEquals(11, success.data[0].receivingBatchId)
+        assertEquals(5, success.data[0].itemCount)
+        assertEquals(10, success.data[0].receivedAt.hour)
     }
 }

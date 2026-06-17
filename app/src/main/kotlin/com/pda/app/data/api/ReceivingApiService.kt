@@ -6,6 +6,7 @@ import com.pda.app.data.api.model.CreateBatchRequest
 import com.pda.app.data.api.model.CreateBatchResponse
 import com.pda.app.data.api.model.CreateItemRequest
 import com.pda.app.data.api.model.CreateItemResponse
+import com.pda.app.data.api.model.ReceivingBatchDto
 import com.pda.app.data.api.model.ReceivingItemDto
 import com.pda.app.data.api.model.ShippingAnalyzeResponse
 import com.pda.app.data.api.model.UploadPhotosResponse
@@ -39,4 +40,11 @@ interface ReceivingApiService {
 
     @POST("api/receiving-batches/{id}/close")
     suspend fun closeBatch(@Path("id") id: Int): Response<CloseBatchResponse>
+
+    @GET("api/receiving-batches")
+    suspend fun getBatches(
+        @Query("warehouseId") warehouseId: Int?,
+        @Query("scanUser") scanUser: String?,
+        @Query("scanDateFrom") scanDateFrom: String?
+    ): Response<List<ReceivingBatchDto>>
 }
