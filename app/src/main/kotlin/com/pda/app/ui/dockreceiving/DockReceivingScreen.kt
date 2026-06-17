@@ -14,6 +14,7 @@ import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -31,8 +32,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -245,7 +249,10 @@ private fun RecordingBottomBar(
     }
 }
 
-/** 扫码模式录入页：无相机预览；顶部运单号输入框（扫码/输入回车自动建条目），下方滚动显示最近扫描。 */
+/**
+ * 扫码模式录入页：无相机预览。输入框默认获取焦点以接收扫码枪输入，但**不弹软键盘**
+ * （buttons 不被遮挡）；需要手动输入时**双击输入框**才弹出软键盘。扫码/回车后自动建条目。
+ */
 @Composable
 private fun ScanContent(
     state: DockReceivingUiState,
@@ -253,7 +260,12 @@ private fun ScanContent(
 ) {
     var text by rememberSaveable { mutableStateOf("") }
     val focusRequester = remember { FocusRequester() }
-    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    // 进入时聚焦（接收扫码枪），并隐藏软键盘。
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+        keyboard?.hide()
+    }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         RecordingStatusBar(state)
@@ -262,11 +274,21 @@ private fun ScanContent(
         OutlinedTextField(
             value = text,
             onValueChange = { text = it },
-            label = { Text("运单号（扫码 / 输入后回车）") },
-            placeholder = { Text("扫码或输入运单号…") },
+            label = { Text("Tracking # (scan / type + Enter)") },
+            placeholder = { Text("Scan or enter tracking #…") },
             singleLine = true,
             textStyle = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(focusRequester)
+                // 保持焦点但默认隐藏软键盘；单击不弹出，双击才弹出。
+                .onFocusChanged { if (it.isFocused) keyboard?.hide() }
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onTap = { /* 吞掉单击，避免弹出软键盘 */ },
+                        onDoubleTap = { keyboard?.show() }
+                    )
+                },
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(
                 onDone = {
@@ -276,12 +298,13 @@ private fun ScanContent(
                         text = ""
                     }
                     focusRequester.requestFocus()
+                    keyboard?.hide()
                 }
             )
         )
 
         Spacer(Modifier.height(12.dp))
-        Text("已录条目 (${state.itemCount})", fontWeight = FontWeight.SemiBold)
+        Text("Recorded (${state.itemCount})", fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(4.dp))
         // 最新的在最上面。
         LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
