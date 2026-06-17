@@ -11,17 +11,20 @@ import androidx.camera.core.ImageCaptureException
 import androidx.camera.view.CameraController
 import androidx.camera.view.LifecycleCameraController
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
@@ -31,6 +34,7 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pda.app.data.api.model.ReceivingItemUi
+import com.pda.app.ui.components.PdaTopBar
 import java.io.File
 import java.util.concurrent.Executors
 
@@ -53,19 +57,22 @@ fun DockReceivingScreen(
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        when (uiState.phase) {
-                            Phase.Idle -> "Dock Receive"
-                            else -> uiState.batchNumber?.let { "批次 $it · ${uiState.itemCount} 件" } ?: "Dock Receive"
-                        }
-                    )
+            PdaTopBar(
+                title = when (uiState.phase) {
+                    Phase.Idle -> "Dock Receive"
+                    else -> uiState.batchNumber?.let { "Batch $it" } ?: "Dock Receive"
                 },
-                navigationIcon = {
-                    TextButton(onClick = onBack) { Text("返回") }
-                }
+                onBack = onBack
             )
+        },
+        bottomBar = {
+            if (uiState.phase == Phase.Recording) {
+                RecordingBottomBar(
+                    state = uiState,
+                    onConfirm = viewModel::saveItem,
+                    onCloseBatch = viewModel::requestCloseBatch
+                )
+            }
         }
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
@@ -77,18 +84,10 @@ fun DockReceivingScreen(
                 Phase.Recording -> RecordingContent(
                     state = uiState,
                     onPhotoCaptured = viewModel::onPhotoCaptured,
-                    onCloseBatch = viewModel::requestCloseBatch
+                    onTrackingChange = viewModel::onTrackingChanged,
+                    onCarrierChange = viewModel::onCarrierChanged,
+                    onConditionChange = viewModel::onConditionChanged
                 )
-                Phase.Confirming -> uiState.confirm?.let { confirm ->
-                    ItemConfirmContent(
-                        confirm = confirm,
-                        onTrackingChange = viewModel::onTrackingChanged,
-                        onCarrierChange = viewModel::onCarrierChanged,
-                        onConditionChange = viewModel::onConditionChanged,
-                        onSave = viewModel::saveItem,
-                        onCancel = viewModel::cancelConfirm
-                    )
-                }
             }
 
             if (uiState.showCloseDialog) {
@@ -109,7 +108,7 @@ private fun IdleContent(busy: Boolean, onStart: () -> Unit) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Button(onClick = onStart, enabled = !busy, modifier = Modifier.height(56.dp)) {
             if (busy) CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-            else Text("开始 Batch")
+            else Text("Start Batch")
         }
     }
 }
@@ -118,24 +117,91 @@ private fun IdleContent(busy: Boolean, onStart: () -> Unit) {
 private fun RecordingContent(
     state: DockReceivingUiState,
     onPhotoCaptured: (File) -> Unit,
-    onCloseBatch: () -> Unit
+    onTrackingChange: (String) -> Unit,
+    onCarrierChange: (String) -> Unit,
+    onConditionChange: (String) -> Unit
 ) {
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        CameraCapture(
-            modifier = Modifier.fillMaxWidth().height(280.dp),
-            onPhotoCaptured = onPhotoCaptured
-        )
-        Spacer(Modifier.height(12.dp))
-        Text("已录入 ${state.itemCount} 件", fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.height(8.dp))
-        LazyColumn(modifier = Modifier.weight(1f)) {
+        // Confirm fields on top (after capture).
+        state.confirm?.let { confirm ->
+            ConfirmFields(
+                confirm = confirm,
+                onTrackingChange = onTrackingChange,
+                onCarrierChange = onCarrierChange,
+                onConditionChange = onConditionChange
+            )
+            Spacer(Modifier.height(12.dp))
+        }
+
+        // Recorded items fill the middle; this also pushes the preview down to the
+        // bottom of the screen (even right after starting a new batch, with no items).
+        LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
             items(state.items, key = { it.receivingItemId }) { item -> RecordedItemRow(item) }
         }
+
         Spacer(Modifier.height(8.dp))
-        Button(
-            onClick = onCloseBatch,
-            modifier = Modifier.fillMaxWidth().height(52.dp)
-        ) { Text("Receive Batch") }
+        CameraCapture(
+            modifier = Modifier.fillMaxWidth(),
+            onPhotoCaptured = onPhotoCaptured
+        )
+    }
+}
+
+@Composable
+private fun RecordingBottomBar(
+    state: DockReceivingUiState,
+    onConfirm: () -> Unit,
+    onCloseBatch: () -> Unit
+) {
+    Surface(tonalElevation = 3.dp) {
+        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(
+                    onClick = onCloseBatch,
+                    enabled = !state.isBusy,
+                    modifier = Modifier.weight(1f)
+                ) { Text("Close Batch") }
+                Button(
+                    onClick = onConfirm,
+                    enabled = state.confirm?.canSave == true,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    if (state.confirm?.saving == true)
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    else Text("Confirm")
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("${state.itemCount} items", fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.weight(1f))
+                val c = state.confirm
+                when {
+                    c?.uploading == true -> ProcessingStatus("Uploading…")
+                    c?.analyzing == true -> ProcessingStatus("Analyzing…")
+                    c?.uploadFailed == true -> Text(
+                        "Upload failed — retake",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    state.recentlySaved -> Text(
+                        "Saved",
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProcessingStatus(text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+        Spacer(Modifier.width(6.dp))
+        Text(text, style = MaterialTheme.typography.bodySmall)
     }
 }
 
@@ -146,11 +212,11 @@ private fun RecordedItemRow(item: ReceivingItemUi) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(item.trackingNo.ifBlank { "（无运单号）" }, fontWeight = FontWeight.Medium)
+            Text(item.trackingNo.ifBlank { "(no tracking #)" }, fontWeight = FontWeight.Medium)
             Text(item.carrier.ifBlank { "—" }, style = MaterialTheme.typography.bodySmall)
         }
         if (item.needsReview) {
-            Icon(Icons.Default.Warning, contentDescription = "需复检", tint = MaterialTheme.colorScheme.error)
+            Icon(Icons.Default.Warning, contentDescription = "Needs review", tint = MaterialTheme.colorScheme.error)
         }
     }
     HorizontalDivider()
@@ -179,8 +245,11 @@ private fun CameraCapture(
     }
 
     if (!hasPermission) {
-        Box(modifier = modifier, contentAlignment = Alignment.Center) {
-            Text("需要相机权限，请在系统设置中开启后返回", textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Box(modifier = modifier.height(200.dp), contentAlignment = Alignment.Center) {
+            Text(
+                "Camera permission required. Enable it in Settings and come back.",
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
         }
         return
     }
@@ -188,6 +257,7 @@ private fun CameraCapture(
     val controller = remember {
         LifecycleCameraController(context).apply {
             cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+            // Preview is always enabled when bound to PreviewView; only configure capture.
             setEnabledUseCases(CameraController.IMAGE_CAPTURE)
         }
     }
@@ -202,19 +272,36 @@ private fun CameraCapture(
 
     Column(modifier = modifier) {
         AndroidView(
-            factory = { ctx -> PreviewView(ctx).apply { this.controller = controller } },
-            modifier = Modifier.fillMaxWidth().weight(1f)
+            factory = { ctx ->
+                PreviewView(ctx).apply {
+                    // Some devices/emulators render black preview unless using COMPATIBLE.
+                    implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+                    scaleType = PreviewView.ScaleType.FILL_CENTER
+                    this.controller = controller
+                }
+            },
+            modifier = Modifier.fillMaxWidth().height(200.dp)
         )
-        Spacer(Modifier.height(8.dp))
-        Button(
-            onClick = { capturePhoto(context, controller, cameraExecutor, onPhotoCaptured) },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Icon(Icons.Default.CameraAlt, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text("拍照")
+        Spacer(Modifier.height(12.dp))
+        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            ShutterButton(onClick = { capturePhoto(context, controller, cameraExecutor, onPhotoCaptured) })
         }
     }
+}
+
+/** 相机快门样式的大圆点：外圈描边 + 内部实心圆。 */
+@Composable
+private fun ShutterButton(onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(72.dp)
+            .clip(CircleShape)
+            .border(width = 4.dp, color = MaterialTheme.colorScheme.primary, shape = CircleShape)
+            .padding(6.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.primary)
+            .clickable(onClick = onClick)
+    )
 }
 
 private fun capturePhoto(
@@ -241,52 +328,24 @@ private fun capturePhoto(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ItemConfirmContent(
+private fun ConfirmFields(
     confirm: ConfirmState,
     onTrackingChange: (String) -> Unit,
     onCarrierChange: (String) -> Unit,
-    onConditionChange: (String) -> Unit,
-    onSave: () -> Unit,
-    onCancel: () -> Unit
+    onConditionChange: (String) -> Unit
 ) {
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        if (confirm.uploading || confirm.analyzing) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                Spacer(Modifier.width(8.dp))
-                Text(if (confirm.uploading) "上传中…" else "AI 识别中…")
-            }
-            Spacer(Modifier.height(12.dp))
-        }
-        if (confirm.uploadFailed) {
-            Text("照片上传失败，请取消后重拍", color = MaterialTheme.colorScheme.error)
-            Spacer(Modifier.height(12.dp))
-        }
-
+    Column(modifier = Modifier.fillMaxWidth()) {
         OutlinedTextField(
             value = confirm.trackingNumber,
             onValueChange = onTrackingChange,
-            label = { Text("运单号") },
+            label = { Text("Tracking #") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
         )
         Spacer(Modifier.height(12.dp))
-        DropdownField("承运商", confirm.carrier, CARRIERS, onCarrierChange)
+        DropdownField("Carrier", confirm.carrier, CARRIERS, onCarrierChange)
         Spacer(Modifier.height(12.dp))
         DropdownField("Condition", confirm.condition, CONDITIONS, onConditionChange)
-
-        Spacer(Modifier.weight(1f))
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f)) { Text("取消") }
-            Button(
-                onClick = onSave,
-                enabled = confirm.canSave,
-                modifier = Modifier.weight(1f)
-            ) {
-                if (confirm.saving) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                else Text("确认录入")
-            }
-        }
     }
 }
 
@@ -326,22 +385,22 @@ private fun CloseBatchDialog(
 ) {
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
-        title = { Text("关闭批次") },
+        title = { Text("Close Batch") },
         text = {
             Text(
                 buildString {
-                    append("共 $itemCount 件")
-                    if (needsReviewCount > 0) append("，其中 $needsReviewCount 件需复检")
-                    append("。确认关闭该批次？")
+                    append("$itemCount items")
+                    if (needsReviewCount > 0) append(", $needsReviewCount need review")
+                    append(". Close this batch?")
                 }
             )
         },
         confirmButton = {
             Button(onClick = onConfirm, enabled = !busy) {
                 if (busy) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                else Text("确认关闭")
+                else Text("Close")
             }
         },
-        dismissButton = { OutlinedButton(onClick = onDismiss, enabled = !busy) { Text("取消") } }
+        dismissButton = { OutlinedButton(onClick = onDismiss, enabled = !busy) { Text("Cancel") } }
     )
 }
