@@ -14,32 +14,49 @@ import javax.inject.Singleton
 
 private val Context.dataStore by preferencesDataStore(name = "user_prefs")
 
-/** 持久化：上次用户名 / 密码 / 记住开关 / 选中仓库 id。 */
+/** 持久化：上次用户名 / 密码 / 记住开关 / 选中仓库 id / Dock 录入方式。 */
+interface UserPreferences {
+    val lastUsername: Flow<String?>
+    val lastPassword: Flow<String?>
+    val rememberUsername: Flow<Boolean>
+    val selectedWarehouseId: Flow<Int?>
+    /** Dock Receiving 上次选择的录入方式（InputMethod 枚举名）。 */
+    val dockInputMethod: Flow<String?>
+
+    /** 登录成功后调用：记住则存用户名与密码，否则清除；同时保存复选框状态。 */
+    suspend fun saveLoginCredentials(username: String, password: String, remember: Boolean)
+    suspend fun setSelectedWarehouseId(id: Int)
+    suspend fun setDockInputMethod(name: String)
+}
+
 @Singleton
-class UserPreferences @Inject constructor(
+class DataStoreUserPreferences @Inject constructor(
     @ApplicationContext private val context: Context
-) {
+) : UserPreferences {
     private companion object {
         val KEY_LAST_USERNAME = stringPreferencesKey("last_username")
         val KEY_LAST_PASSWORD = stringPreferencesKey("last_password")
         val KEY_REMEMBER_USERNAME = booleanPreferencesKey("remember_username")
         val KEY_SELECTED_WAREHOUSE_ID = intPreferencesKey("selected_warehouse_id")
+        val KEY_INPUT_METHOD = stringPreferencesKey("dock_input_method")
     }
 
-    val lastUsername: Flow<String?> =
+    override val lastUsername: Flow<String?> =
         context.dataStore.data.map { it[KEY_LAST_USERNAME] }
 
-    val lastPassword: Flow<String?> =
+    override val lastPassword: Flow<String?> =
         context.dataStore.data.map { it[KEY_LAST_PASSWORD] }
 
-    val rememberUsername: Flow<Boolean> =
+    override val rememberUsername: Flow<Boolean> =
         context.dataStore.data.map { it[KEY_REMEMBER_USERNAME] ?: true }
 
-    val selectedWarehouseId: Flow<Int?> =
+    override val selectedWarehouseId: Flow<Int?> =
         context.dataStore.data.map { it[KEY_SELECTED_WAREHOUSE_ID] }
 
-    /** 登录成功后调用：记住则存用户名与密码，否则清除；同时保存复选框状态。 */
-    suspend fun saveLoginCredentials(username: String, password: String, remember: Boolean) {
+    override val dockInputMethod: Flow<String?> =
+        context.dataStore.data.map { it[KEY_INPUT_METHOD] }
+
+    override suspend fun saveLoginCredentials(username: String, password: String, remember: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[KEY_REMEMBER_USERNAME] = remember
             if (remember) {
@@ -52,7 +69,11 @@ class UserPreferences @Inject constructor(
         }
     }
 
-    suspend fun setSelectedWarehouseId(id: Int) {
+    override suspend fun setSelectedWarehouseId(id: Int) {
         context.dataStore.edit { it[KEY_SELECTED_WAREHOUSE_ID] = id }
+    }
+
+    override suspend fun setDockInputMethod(name: String) {
+        context.dataStore.edit { it[KEY_INPUT_METHOD] = name }
     }
 }

@@ -6,11 +6,15 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.pda.app.data.NetworkResult
 import com.pda.app.data.api.model.CreateItemRequest
+import com.pda.app.data.prefs.UserPreferences
 import com.pda.app.data.repository.ReceivingRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.File
@@ -20,6 +24,7 @@ import javax.inject.Inject
 class DockReceivingViewModel @Inject constructor(
     private val repo: ReceivingRepository,
     private val encoder: ImageEncoder,
+    private val prefs: UserPreferences,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -32,6 +37,15 @@ class DockReceivingViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(DockReceivingUiState())
     val uiState: StateFlow<DockReceivingUiState> = _uiState.asStateFlow()
+
+    /** 持久化记住的录入方式（默认 Picture）。 */
+    val inputMethod: StateFlow<InputMethod> = prefs.dockInputMethod
+        .map { name -> InputMethod.entries.firstOrNull { it.name == name } ?: InputMethod.Picture }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), InputMethod.Picture)
+
+    fun setInputMethod(method: InputMethod) {
+        viewModelScope.launch { prefs.setDockInputMethod(method.name) }
+    }
 
     fun startBatch(method: InputMethod = InputMethod.Picture) {
         val wid = warehouseId

@@ -55,8 +55,8 @@ fun DockReceivingScreen(
     viewModel: DockReceivingViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val inputMethod by viewModel.inputMethod.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
 
     LaunchedEffect(uiState.message) {
         uiState.message?.let {
@@ -96,7 +96,9 @@ fun DockReceivingScreen(
             when (uiState.phase) {
                 Phase.Idle -> IdleContent(
                     busy = uiState.isBusy,
-                    onStart = { method -> viewModel.startBatch(method) }
+                    method = inputMethod,
+                    onMethodChange = viewModel::setInputMethod,
+                    onStart = { viewModel.startBatch(inputMethod) }
                 )
                 Phase.Recording -> when (uiState.inputMethod) {
                     InputMethod.Picture -> RecordingContent(
@@ -128,8 +130,12 @@ fun DockReceivingScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun IdleContent(busy: Boolean, onStart: (InputMethod) -> Unit) {
-    var method by rememberSaveable { mutableStateOf(InputMethod.Picture) }
+private fun IdleContent(
+    busy: Boolean,
+    method: InputMethod,
+    onMethodChange: (InputMethod) -> Unit,
+    onStart: () -> Unit
+) {
     Column(
         modifier = Modifier.fillMaxSize().padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -146,7 +152,7 @@ private fun IdleContent(busy: Boolean, onStart: (InputMethod) -> Unit) {
             InputMethod.entries.forEachIndexed { index, m ->
                 SegmentedButton(
                     selected = method == m,
-                    onClick = { method = m },
+                    onClick = { onMethodChange(m) },
                     enabled = !busy,
                     shape = SegmentedButtonDefaults.itemShape(index, InputMethod.entries.size)
                 ) { Text(m.label) }
@@ -156,7 +162,7 @@ private fun IdleContent(busy: Boolean, onStart: (InputMethod) -> Unit) {
         Spacer(Modifier.height(28.dp))
 
         Button(
-            onClick = { onStart(method) },
+            onClick = onStart,
             enabled = !busy,
             shape = RoundedCornerShape(12.dp),
             modifier = Modifier.fillMaxWidth().height(56.dp)

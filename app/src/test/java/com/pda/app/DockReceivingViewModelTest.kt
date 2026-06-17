@@ -1,6 +1,7 @@
 package com.pda.app
 
 import androidx.lifecycle.SavedStateHandle
+import com.pda.app.data.prefs.UserPreferences
 import com.pda.app.data.NetworkResult
 import com.pda.app.data.api.model.BatchInfo
 import com.pda.app.data.api.model.CreateItemRequest
@@ -66,8 +67,24 @@ private class FakeImageEncoder : ImageEncoder {
     override suspend fun compress(file: File) = CompressedImage(byteArrayOf(1, 2, 3), "BASE64")
 }
 
+private class FakeUserPreferences(private var inputMethod: String? = null) : UserPreferences {
+    override val lastUsername = flowOf<String?>(null)
+    override val lastPassword = flowOf<String?>(null)
+    override val rememberUsername = flowOf(true)
+    override val selectedWarehouseId = flowOf<Int?>(null)
+    override val dockInputMethod = flowOf(inputMethod)
+    override suspend fun saveLoginCredentials(username: String, password: String, remember: Boolean) {}
+    override suspend fun setSelectedWarehouseId(id: Int) {}
+    override suspend fun setDockInputMethod(name: String) { inputMethod = name }
+}
+
 private fun vm(repo: ReceivingRepository, warehouseId: String? = "7"): DockReceivingViewModel =
-    DockReceivingViewModel(repo, FakeImageEncoder(), SavedStateHandle(mapOf("warehouseId" to warehouseId)))
+    DockReceivingViewModel(
+        repo,
+        FakeImageEncoder(),
+        FakeUserPreferences(),
+        SavedStateHandle(mapOf("warehouseId" to warehouseId))
+    )
 
 class DockReceivingViewModelTest {
 
