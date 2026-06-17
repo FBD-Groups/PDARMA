@@ -10,7 +10,8 @@ Android 手持终端应用，对接 RMA 后端 API，用于仓库现场作业（
 | 会话管理 | ✅ | DataStore 持久化 Token，OkHttp 自动附加 `Authorization` |
 | 首页 | ✅ | 问候语、仓库切换、退出登录 |
 | 仓库列表 | ✅ | 拉取仓库列表，DataStore 记住上次选择 |
-| Dock Receive | 🚧 | 首页磁贴已预留，功能开发中 |
+| Dock Receive | ✅ | CameraX 拍照 → AI 识别运单/承运商 → 创建批次并逐件收货 |
+| Receive Report | ✅ | 最近三天已收货批次（密集账本视图、按天分组），点批次下钻看单件明细（运单/承运商/需复核） |
 
 ## 技术栈
 
@@ -34,13 +35,16 @@ app/src/main/kotlin/com/pda/app/
 │   └── NetworkModule.kt       # Retrofit / OkHttp / Json
 ├── data/
 │   ├── NetworkResult.kt
-│   ├── api/                   # Retrofit 接口与 DTO
-│   ├── repository/            # AuthRepository, WarehouseRepository
+│   ├── api/                   # Retrofit 接口与 DTO（Auth / Warehouse / Receiving）
+│   ├── repository/            # AuthRepository, WarehouseRepository, ReceivingRepository
 │   ├── prefs/                 # UserPreferences (DataStore)
 │   └── session/               # SessionManager
 └── ui/
     ├── login/                 # LoginScreen + LoginViewModel
     ├── home/                  # HomeScreen + HomeViewModel（仓库切换、功能入口）
+    ├── dockreceiving/         # DockReceivingScreen + ViewModel（拍照收货）
+    ├── receivereport/         # ReceiveReportScreen + ViewModel（收货报表）
+    ├── batchdetail/           # BatchDetailScreen + ViewModel（批次单件明细）
     └── theme/
 ```
 
@@ -123,6 +127,10 @@ Logcat 使用 `PDA` 前缀过滤：
 | `PDA/AuthRepository` | 登录流程 |
 | `PDA/LoginViewModel` | 登录 UI 状态流转 |
 | `PDA/HomeViewModel` | 首页仓库加载与切换 |
+| `PDA/ReceivingRepository` | 收货批次 / 单件 / 报表数据 |
+| `PDA/DockReceivingViewModel` | 拍照收货流程 |
+| `PDA/ReceiveReportViewModel` | 收货报表加载 |
+| `PDA/BatchDetailViewModel` | 批次明细加载 |
 
 密码不会写入日志。
 
