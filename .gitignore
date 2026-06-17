@@ -20,6 +20,12 @@ release/
 build/
 app/build/
 
+# Kotlin compiler local session state
+.kotlin/
+
+# Superpowers local tool state
+.superpowers/
+
 # Local configuration file (sdk path, etc)
 local.properties
 
