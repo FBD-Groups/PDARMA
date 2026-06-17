@@ -3,7 +3,7 @@ package com.pda.app.ui.dockreceiving
 import com.pda.app.data.api.model.ReceivingItemUi
 import java.io.File
 
-enum class Phase { Idle, Recording, Confirming }
+enum class Phase { Idle, Recording }
 
 /** 单条 label 确认页的状态。 */
 data class ConfirmState(
@@ -20,7 +20,9 @@ data class ConfirmState(
     val carrierAutoFilled: Boolean = false,
     val saving: Boolean = false
 ) {
-    val canSave: Boolean get() = photoPath != null && !uploading && !saving
+    /** 可保存：照片已上传、未在上传/保存中，且运单号非空（自动识别或手工输入均可）。 */
+    val canSave: Boolean
+        get() = photoPath != null && !uploading && !saving && trackingNumber.isNotBlank()
 }
 
 data class DockReceivingUiState(
@@ -31,7 +33,8 @@ data class DockReceivingUiState(
     val confirm: ConfirmState? = null,
     val isBusy: Boolean = false,          // batch-level op (start/close/refresh) in flight
     val showCloseDialog: Boolean = false,
-    val message: String? = null           // one-shot snackbar text; cleared via messageShown()
+    val message: String? = null,          // one-shot snackbar text; cleared via messageShown()
+    val recentlySaved: Boolean = false    // shows "Saved" in the bottom status bar until next capture
 ) {
     val itemCount: Int get() = items.size
     val needsReviewCount: Int get() = items.count { it.needsReview }

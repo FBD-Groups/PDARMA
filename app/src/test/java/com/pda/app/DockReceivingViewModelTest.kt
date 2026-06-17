@@ -57,6 +57,7 @@ private class FakeReceivingRepository(
             override suspend fun createItem(req: CreateItemRequest) = error("unused")
             override suspend fun getItems(batchId: Int) = error("unused")
             override suspend fun closeBatch(id: Int) = error("unused")
+            override suspend fun getBatches(warehouseId: Int?, scanUser: String?, scanDateFrom: String?) = error("unused")
         }
     }
 }
@@ -126,7 +127,8 @@ class DockReceivingViewModelTest {
         advanceUntilIdle()
 
         val c = vm.uiState.value.confirm!!
-        assertEquals(Phase.Confirming, vm.uiState.value.phase)
+        // 单屏内联：拍照后仍处于 Recording，confirm 字段内联显示在预览下方。
+        assertEquals(Phase.Recording, vm.uiState.value.phase)
         assertEquals("/p/abc.jpg", c.photoPath)
         assertFalse(c.uploading)
         assertFalse(c.analyzing)
@@ -135,6 +137,7 @@ class DockReceivingViewModelTest {
         assertTrue(c.trackingAutoFilled)
         assertTrue(c.carrierAutoFilled)
         assertEquals("{}", c.rawJson)
+        assertTrue(c.canSave) // 自动识别出运单号 → 可保存
     }
 
     @Test
@@ -153,7 +156,28 @@ class DockReceivingViewModelTest {
         assertEquals("/p/abc.jpg", c.photoPath)
         assertEquals("", c.trackingNumber)
         assertFalse(c.analyzing)
-        assertEquals(Phase.Confirming, vm.uiState.value.phase)
+        assertFalse(c.canSave) // 解析失败、无运单号 → 不可保存
+        assertEquals(Phase.Recording, vm.uiState.value.phase)
+    }
+
+    @Test
+    fun `no tracking after analyze blocks save until entered manually`() = runTest {
+        val repo = FakeReceivingRepository().apply {
+            createBatchFlow = { flowOf(NetworkResult.Success(BatchInfo(42, "B-001"))) }
+            uploadFlow = { flowOf(NetworkResult.Success("/p/abc.jpg")) }
+            // 上传成功、解析成功但未识别出运单号
+            analyzeFlow = { flowOf(NetworkResult.Success(ShippingAnalysis(null, "UPS", null, "{}"))) }
+        }
+        val vm = vm(repo)
+        vm.startBatch(); advanceUntilIdle()
+        vm.onPhotoCaptured(File("capture.jpg")); advanceUntilIdle()
+
+        // 照片已上传、解析结束，但没有运单号 → 仍不可保存
+        assertFalse(vm.uiState.value.confirm!!.canSave)
+
+        // 手工输入运单号后 → 可保存
+        vm.onTrackingChanged("1Z999")
+        assertTrue(vm.uiState.value.confirm!!.canSave)
     }
 
     @Test
@@ -255,7 +279,7 @@ class DockReceivingViewModelTest {
         assertNull(s.batchId)
         assertTrue(s.items.isEmpty())
         assertFalse(s.showCloseDialog)
-        assertEquals("B-001 已关闭", s.message)
+        assertEquals("B-001 closed", s.message)
     }
 
     @Test
