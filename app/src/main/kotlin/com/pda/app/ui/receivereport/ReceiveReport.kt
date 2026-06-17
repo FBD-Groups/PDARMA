@@ -2,21 +2,20 @@ package com.pda.app.ui.receivereport
 
 import com.pda.app.data.api.model.ReceivedBatch
 import java.time.LocalDate
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 
-/** Receive Report 中的一天分组：标题 + 该天的批次（按收货时间倒序）。 */
+/** Day-header kind; the visible label is formatted in the Composable (locale-aware). */
+enum class DayKind { Today, Yesterday, Older }
+
+/** Receive Report 中的一天分组：分类 + 日期 + 该天的批次（按收货时间倒序）。 */
 data class ReceiveReportDay(
-    val label: String,
+    val kind: DayKind,
     val date: LocalDate,
     val batches: List<ReceivedBatch>
 )
 
-private val DAY_FORMAT = DateTimeFormatter.ofPattern("MMM d", Locale.ENGLISH)
-
 /**
  * 纯函数（可单测）：把已收货批次过滤到最近三天（today、today-1、today-2），
- * 按天倒序分组，每天内按收货时间倒序。
+ * 按天倒序分组，每天内按收货时间倒序。标签文案由 UI 层按语言格式化。
  */
 fun buildReceiveReport(batches: List<ReceivedBatch>, today: LocalDate): List<ReceiveReportDay> {
     val windowStart = today.minusDays(2)
@@ -26,15 +25,15 @@ fun buildReceiveReport(batches: List<ReceivedBatch>, today: LocalDate): List<Rec
         .toSortedMap(compareByDescending { it })
         .map { (date, list) ->
             ReceiveReportDay(
-                label = dayLabel(date, today),
+                kind = dayKind(date, today),
                 date = date,
                 batches = list.sortedByDescending { it.receivedAt }
             )
         }
 }
 
-private fun dayLabel(date: LocalDate, today: LocalDate): String = when (date) {
-    today -> "Today"
-    today.minusDays(1) -> "Yesterday"
-    else -> date.format(DAY_FORMAT)
+private fun dayKind(date: LocalDate, today: LocalDate): DayKind = when (date) {
+    today -> DayKind.Today
+    today.minusDays(1) -> DayKind.Yesterday
+    else -> DayKind.Older
 }

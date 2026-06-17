@@ -50,7 +50,7 @@ class DockReceivingViewModel @Inject constructor(
     fun startBatch(method: InputMethod = InputMethod.Picture) {
         val wid = warehouseId
         if (wid == null) {
-            _uiState.update { it.copy(message = "Select a warehouse first") }
+            _uiState.update { it.copy(message = DockMessage.SelectWarehouseFirst) }
             return
         }
         viewModelScope.launch {
@@ -68,7 +68,7 @@ class DockReceivingViewModel @Inject constructor(
                         )
                     }
                     is NetworkResult.Error -> _uiState.update {
-                        it.copy(isBusy = false, message = result.message)
+                        it.copy(isBusy = false, message = DockMessage.Text(result.message))
                     }
                 }
             }
@@ -89,7 +89,7 @@ class DockReceivingViewModel @Inject constructor(
                 Log.e(TAG, "compress: ${e.message}", e)
                 _uiState.update {
                     it.copy(confirm = it.confirm?.copy(uploading = false, analyzing = false, uploadFailed = true),
-                        message = "Photo processing failed — retake")
+                        message = DockMessage.PhotoProcessingFailed)
                 }
                 return@launch
             }
@@ -106,7 +106,7 @@ class DockReceivingViewModel @Inject constructor(
                     it.copy(confirm = it.confirm?.copy(uploading = false, photoPath = result.data, uploadFailed = false))
                 }
                 is NetworkResult.Error -> _uiState.update {
-                    it.copy(confirm = it.confirm?.copy(uploading = false, uploadFailed = true), message = result.message)
+                    it.copy(confirm = it.confirm?.copy(uploading = false, uploadFailed = true), message = DockMessage.Text(result.message))
                 }
             }
         }
@@ -134,7 +134,7 @@ class DockReceivingViewModel @Inject constructor(
                     )
                 }
                 is NetworkResult.Error -> _uiState.update {
-                    it.copy(confirm = it.confirm?.copy(analyzing = false), message = result.message)
+                    it.copy(confirm = it.confirm?.copy(analyzing = false), message = DockMessage.Text(result.message))
                 }
             }
         }
@@ -182,7 +182,7 @@ class DockReceivingViewModel @Inject constructor(
                         refreshItems(bid)
                     }
                     is NetworkResult.Error -> _uiState.update {
-                        it.copy(confirm = it.confirm?.copy(saving = false), message = result.message)
+                        it.copy(confirm = it.confirm?.copy(saving = false), message = DockMessage.Text(result.message))
                     }
                 }
             }
@@ -209,7 +209,7 @@ class DockReceivingViewModel @Inject constructor(
                         _uiState.update { it.copy(recentlySaved = true) }
                         refreshItems(bid)
                     }
-                    is NetworkResult.Error -> _uiState.update { it.copy(message = result.message) }
+                    is NetworkResult.Error -> _uiState.update { it.copy(message = DockMessage.Text(result.message)) }
                 }
             }
         }
@@ -218,7 +218,7 @@ class DockReceivingViewModel @Inject constructor(
     private suspend fun refreshItems(batchId: Int) {
         repo.getItems(batchId).collect { result ->
             if (result is NetworkResult.Success) _uiState.update { it.copy(items = result.data) }
-            else if (result is NetworkResult.Error) _uiState.update { it.copy(message = result.message) }
+            else if (result is NetworkResult.Error) _uiState.update { it.copy(message = DockMessage.Text(result.message)) }
         }
     }
 
@@ -233,10 +233,10 @@ class DockReceivingViewModel @Inject constructor(
                 when (result) {
                     is NetworkResult.Loading -> _uiState.update { it.copy(isBusy = true) }
                     is NetworkResult.Success -> _uiState.update {
-                        DockReceivingUiState(message = "${number ?: "Batch"} closed")
+                        DockReceivingUiState(message = DockMessage.BatchClosed(number.orEmpty()))
                     }
                     is NetworkResult.Error -> _uiState.update {
-                        it.copy(isBusy = false, showCloseDialog = false, message = result.message)
+                        it.copy(isBusy = false, showCloseDialog = false, message = DockMessage.Text(result.message))
                     }
                 }
             }

@@ -34,6 +34,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -52,6 +53,8 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.pda.app.ui.i18n.AppLanguage
+import com.pda.app.ui.i18n.LocalAppStrings
 
 @Composable
 fun LoginScreen(
@@ -60,6 +63,8 @@ fun LoginScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val prefill by viewModel.prefill.collectAsStateWithLifecycle()
+    val currentLanguage by viewModel.currentLanguage.collectAsStateWithLifecycle()
+    val strings = LocalAppStrings.current
 
     var username by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
@@ -102,6 +107,32 @@ fun LoginScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
+        // 语言选择器：三种语言，点击即持久化并即时切换全局文案。
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            AppLanguage.entries.forEach { lang ->
+                val selected = lang == currentLanguage
+                TextButton(
+                    onClick = { viewModel.selectLanguage(lang) },
+                    enabled = !isLoading
+                ) {
+                    Text(
+                        text = lang.displayName,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (selected) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = if (selected) androidx.compose.ui.text.font.FontWeight.Bold
+                        else androidx.compose.ui.text.font.FontWeight.Normal
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
         // 居中 Logo（设计 B）
         Surface(
             shape = RoundedCornerShape(18.dp),
@@ -126,7 +157,7 @@ fun LoginScreen(
             color = MaterialTheme.colorScheme.primary
         )
         Text(
-            text = "仓库管理系统",
+            text = strings.login_subtitle,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -139,7 +170,7 @@ fun LoginScreen(
                 username = it
                 viewModel.clearError()
             },
-            label = { Text("用户名") },
+            label = { Text(strings.login_username) },
             leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
             singleLine = true,
             enabled = !isLoading,
@@ -160,13 +191,13 @@ fun LoginScreen(
                 password = it
                 viewModel.clearError()
             },
-            label = { Text("密码") },
+            label = { Text(strings.login_password) },
             leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
             trailingIcon = {
                 IconButton(onClick = { passwordVisible = !passwordVisible }) {
                     Icon(
                         imageVector = if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                        contentDescription = if (passwordVisible) "隐藏密码" else "显示密码"
+                        contentDescription = if (passwordVisible) strings.login_hidePassword else strings.login_showPassword
                     )
                 }
             },
@@ -194,7 +225,7 @@ fun LoginScreen(
                 enabled = !isLoading
             )
             Text(
-                text = "记住账号密码",
+                text = strings.login_rememberCredentials,
                 style = MaterialTheme.typography.bodyMedium
             )
         }
@@ -229,7 +260,7 @@ fun LoginScreen(
                     strokeWidth = 2.dp
                 )
             } else {
-                Text(text = "登 录", style = MaterialTheme.typography.titleMedium)
+                Text(text = strings.login_loginButton, style = MaterialTheme.typography.titleMedium)
             }
         }
     }

@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.pda.app.ui.i18n.LocalAppStrings
 
 /**
  * 全应用统一的顶栏，与首页（HomeScreen）顶栏样式一致：primary 底色、48dp 高、内容垂直居中。
@@ -47,7 +48,7 @@ fun PdaTopBar(
                 IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "返回",
+                        contentDescription = LocalAppStrings.current.common_back,
                         tint = MaterialTheme.colorScheme.onPrimary,
                         modifier = Modifier.size(22.dp)
                     )

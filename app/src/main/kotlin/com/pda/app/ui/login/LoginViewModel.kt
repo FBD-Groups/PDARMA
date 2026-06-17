@@ -7,13 +7,17 @@ import com.pda.app.data.NetworkResult
 import com.pda.app.data.prefs.UserPreferences
 import com.pda.app.data.repository.AuthRepository
 import com.pda.app.data.session.SessionManager
+import com.pda.app.ui.i18n.AppLanguage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -34,6 +38,16 @@ class LoginViewModel @Inject constructor(
     /** 一次性预填值；null 表示尚未加载。 */
     private val _prefill = MutableStateFlow<LoginPrefill?>(null)
     val prefill: StateFlow<LoginPrefill?> = _prefill.asStateFlow()
+
+    /** 当前持久化的语言，用于选择器高亮（默认中文）。 */
+    val currentLanguage: StateFlow<AppLanguage> = userPreferences.appLanguage
+        .map { AppLanguage.fromName(it) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AppLanguage.Chinese)
+
+    /** 写路径：直接更新 DataStore；MainActivity 监听后自动重组整棵树。 */
+    fun selectLanguage(language: AppLanguage) {
+        viewModelScope.launch { userPreferences.setAppLanguage(language.persistedName) }
+    }
 
     init {
         viewModelScope.launch {

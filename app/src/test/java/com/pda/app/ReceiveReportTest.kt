@@ -1,6 +1,7 @@
 package com.pda.app
 
 import com.pda.app.data.api.model.ReceivedBatch
+import com.pda.app.ui.receivereport.DayKind
 import com.pda.app.ui.receivereport.buildReceiveReport
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -15,14 +16,18 @@ class ReceiveReportTest {
         ReceivedBatch(receivingBatchId = no.hashCode(), batchNumber = no, receivedAt = dt, itemCount = count)
 
     @Test
-    fun `groups by day descending with Today and Yesterday labels`() {
+    fun `groups by day descending with Today, Yesterday, Older kinds`() {
         val batches = listOf(
             batch("A", LocalDateTime.of(2026, 6, 17, 9, 0)),
             batch("B", LocalDateTime.of(2026, 6, 16, 14, 0)),
             batch("C", LocalDateTime.of(2026, 6, 15, 8, 0))
         )
         val days = buildReceiveReport(batches, today)
-        assertEquals(listOf("Today", "Yesterday", "Jun 15"), days.map { it.label })
+        assertEquals(listOf(DayKind.Today, DayKind.Yesterday, DayKind.Older), days.map { it.kind })
+        assertEquals(
+            listOf(LocalDate.of(2026, 6, 17), LocalDate.of(2026, 6, 16), LocalDate.of(2026, 6, 15)),
+            days.map { it.date }
+        )
     }
 
     @Test

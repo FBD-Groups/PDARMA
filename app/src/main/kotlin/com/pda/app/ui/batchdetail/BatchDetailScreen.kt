@@ -28,6 +28,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pda.app.data.api.model.ReceivingItemUi
 import com.pda.app.ui.components.PdaTopBar
+import com.pda.app.ui.i18n.LocalAppStrings
 
 private val ReviewBg = Color(0xFFFAEEDA)
 private val ReviewFg = Color(0xFF854F0B)
@@ -39,6 +40,7 @@ fun BatchDetailScreen(
     viewModel: BatchDetailViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val strings = LocalAppStrings.current
 
     Scaffold(
         topBar = { PdaTopBar(title = viewModel.batchNumber, onBack = onBack) }
@@ -46,20 +48,20 @@ fun BatchDetailScreen(
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             when (val state = uiState) {
                 is BatchDetailUiState.Loading ->
-                    Text("Loading…", modifier = Modifier.align(Alignment.Center), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(strings.common_loading, modifier = Modifier.align(Alignment.Center), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 is BatchDetailUiState.Empty ->
-                    Text("该批次暂无明细", modifier = Modifier.align(Alignment.Center), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(strings.batch_empty, modifier = Modifier.align(Alignment.Center), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 is BatchDetailUiState.Error ->
                     Column(modifier = Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(state.message, color = MaterialTheme.colorScheme.error)
-                        TextButton(onClick = viewModel::load) { Text("重试") }
+                        TextButton(onClick = viewModel::load) { Text(strings.common_retry) }
                     }
                 is BatchDetailUiState.Success ->
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
                         item(key = "summary") {
                             Surface(color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.fillMaxWidth()) {
                                 Text(
-                                    "${state.items.size} items",
+                                    strings.itemCount(state.items.size),
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.SemiBold,
                                     color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -80,6 +82,7 @@ fun BatchDetailScreen(
 
 @Composable
 private fun ItemRow(item: ReceivingItemUi) {
+    val strings = LocalAppStrings.current
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -87,7 +90,7 @@ private fun ItemRow(item: ReceivingItemUi) {
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                item.trackingNo.ifBlank { "（无单号）" },
+                item.trackingNo.ifBlank { strings.batch_noTracking },
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface
@@ -99,7 +102,7 @@ private fun ItemRow(item: ReceivingItemUi) {
         if (item.needsReview) {
             Surface(color = ReviewBg, shape = MaterialTheme.shapes.small) {
                 Text(
-                    "需复核",
+                    strings.batch_needsReview,
                     color = ReviewFg,
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Medium,

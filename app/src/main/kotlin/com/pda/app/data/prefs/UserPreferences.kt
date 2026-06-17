@@ -22,11 +22,14 @@ interface UserPreferences {
     val selectedWarehouseId: Flow<Int?>
     /** Dock Receiving 上次选择的录入方式（InputMethod 枚举名）。 */
     val dockInputMethod: Flow<String?>
+    /** 应用语言（AppLanguage.persistedName）；null 表示尚未选择，默认中文。 */
+    val appLanguage: Flow<String?>
 
     /** 登录成功后调用：记住则存用户名与密码，否则清除；同时保存复选框状态。 */
     suspend fun saveLoginCredentials(username: String, password: String, remember: Boolean)
     suspend fun setSelectedWarehouseId(id: Int)
     suspend fun setDockInputMethod(name: String)
+    suspend fun setAppLanguage(name: String)
 }
 
 @Singleton
@@ -39,6 +42,7 @@ class DataStoreUserPreferences @Inject constructor(
         val KEY_REMEMBER_USERNAME = booleanPreferencesKey("remember_username")
         val KEY_SELECTED_WAREHOUSE_ID = intPreferencesKey("selected_warehouse_id")
         val KEY_INPUT_METHOD = stringPreferencesKey("dock_input_method")
+        val KEY_APP_LANGUAGE = stringPreferencesKey("app_language")
     }
 
     override val lastUsername: Flow<String?> =
@@ -55,6 +59,9 @@ class DataStoreUserPreferences @Inject constructor(
 
     override val dockInputMethod: Flow<String?> =
         context.dataStore.data.map { it[KEY_INPUT_METHOD] }
+
+    override val appLanguage: Flow<String?> =
+        context.dataStore.data.map { it[KEY_APP_LANGUAGE] }
 
     override suspend fun saveLoginCredentials(username: String, password: String, remember: Boolean) {
         context.dataStore.edit { prefs ->
@@ -75,5 +82,9 @@ class DataStoreUserPreferences @Inject constructor(
 
     override suspend fun setDockInputMethod(name: String) {
         context.dataStore.edit { it[KEY_INPUT_METHOD] = name }
+    }
+
+    override suspend fun setAppLanguage(name: String) {
+        context.dataStore.edit { it[KEY_APP_LANGUAGE] = name }
     }
 }

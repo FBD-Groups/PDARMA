@@ -9,6 +9,7 @@ import com.pda.app.data.api.model.ReceivingItemUi
 import com.pda.app.data.api.model.ShippingAnalysis
 import com.pda.app.data.repository.ReceivingRepository
 import com.pda.app.ui.dockreceiving.CompressedImage
+import com.pda.app.ui.dockreceiving.DockMessage
 import com.pda.app.ui.dockreceiving.DockReceivingViewModel
 import com.pda.app.ui.dockreceiving.ImageEncoder
 import com.pda.app.ui.dockreceiving.Phase
@@ -73,9 +74,11 @@ private class FakeUserPreferences(private var inputMethod: String? = null) : Use
     override val rememberUsername = flowOf(true)
     override val selectedWarehouseId = flowOf<Int?>(null)
     override val dockInputMethod = flowOf(inputMethod)
+    override val appLanguage = flowOf<String?>(null)
     override suspend fun saveLoginCredentials(username: String, password: String, remember: Boolean) {}
     override suspend fun setSelectedWarehouseId(id: Int) {}
     override suspend fun setDockInputMethod(name: String) { inputMethod = name }
+    override suspend fun setAppLanguage(name: String) {}
 }
 
 private fun vm(repo: ReceivingRepository, warehouseId: String? = "7"): DockReceivingViewModel =
@@ -122,7 +125,7 @@ class DockReceivingViewModelTest {
 
         val s = vm.uiState.value
         assertEquals(Phase.Idle, s.phase)
-        assertEquals("创建批次失败（500）", s.message)
+        assertEquals(DockMessage.Text("创建批次失败（500）"), s.message)
     }
 
     @Test
@@ -296,7 +299,7 @@ class DockReceivingViewModelTest {
         assertNull(s.batchId)
         assertTrue(s.items.isEmpty())
         assertFalse(s.showCloseDialog)
-        assertEquals("B-001 closed", s.message)
+        assertEquals(DockMessage.BatchClosed("B-001"), s.message)
     }
 
     @Test
@@ -306,7 +309,7 @@ class DockReceivingViewModelTest {
         }
         val vm = vm(repo)
         vm.startBatch(); advanceUntilIdle()
-        assertEquals("x", vm.uiState.value.message)
+        assertEquals(DockMessage.Text("x"), vm.uiState.value.message)
 
         vm.messageShown()
         assertNull(vm.uiState.value.message)

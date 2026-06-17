@@ -36,7 +36,12 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pda.app.data.api.model.ReceivedBatch
 import com.pda.app.ui.components.PdaTopBar
+import com.pda.app.ui.i18n.AppStrings
+import com.pda.app.ui.i18n.LocalAppLanguage
+import com.pda.app.ui.i18n.LocalAppStrings
+import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 private val TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm")
 private val StatusDot = Color(0xFF1D9E75)
@@ -49,27 +54,32 @@ fun ReceiveReportScreen(
     viewModel: ReceiveReportViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val strings = LocalAppStrings.current
+    val locale = LocalAppLanguage.current.locale
 
     Scaffold(
-        topBar = { PdaTopBar(title = "Receive Report", onBack = onBack) }
+        topBar = { PdaTopBar(title = strings.report_title, onBack = onBack) }
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             when (val state = uiState) {
                 is ReceiveReportUiState.Loading ->
-                    Text("Loading…", modifier = Modifier.align(Alignment.Center), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(strings.common_loading, modifier = Modifier.align(Alignment.Center), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 is ReceiveReportUiState.Empty ->
-                    Text("No receipts in the last 3 days", modifier = Modifier.align(Alignment.Center), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(strings.report_empty, modifier = Modifier.align(Alignment.Center), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 is ReceiveReportUiState.Error ->
                     Column(modifier = Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(state.message, color = MaterialTheme.colorScheme.error)
-                        TextButton(onClick = viewModel::load) { Text("重试") }
+                        TextButton(onClick = viewModel::load) { Text(strings.common_retry) }
                     }
                 is ReceiveReportUiState.Success ->
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
                         state.days.forEach { day ->
                             stickyHeader(key = "header-${day.date}") {
                                 val total = day.batches.sumOf { it.itemCount }
-                                DayHeader(label = day.label, batchCount = day.batches.size, itemTotal = total)
+                                DayHeader(
+                                    label = dayHeaderLabel(day.kind, day.date, strings, locale),
+                                    summary = strings.report_daySummary(day.batches.size, total)
+                                )
                             }
                             items(day.batches, key = { it.receivingBatchId }) { batch ->
                                 BatchRow(batch, onClick = { onOpenBatch(batch.receivingBatchId, batch.batchNumber) })
@@ -82,8 +92,14 @@ fun ReceiveReportScreen(
     }
 }
 
+private fun dayHeaderLabel(kind: DayKind, date: LocalDate, strings: AppStrings, locale: Locale): String = when (kind) {
+    DayKind.Today -> strings.report_today
+    DayKind.Yesterday -> strings.report_yesterday
+    DayKind.Older -> date.format(DateTimeFormatter.ofPattern("MMM d", locale))
+}
+
 @Composable
-private fun DayHeader(label: String, batchCount: Int, itemTotal: Int) {
+private fun DayHeader(label: String, summary: String) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -99,7 +115,7 @@ private fun DayHeader(label: String, batchCount: Int, itemTotal: Int) {
             modifier = Modifier.weight(1f)
         )
         Text(
-            "$batchCount batches · $itemTotal items",
+            summary,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onPrimaryContainer
         )

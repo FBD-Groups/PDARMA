@@ -8,26 +8,43 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.pda.app.data.prefs.UserPreferences
 import com.pda.app.ui.batchdetail.BatchDetailScreen
 import com.pda.app.ui.dockreceiving.DockReceivingScreen
 import com.pda.app.ui.home.HomeScreen
+import com.pda.app.ui.i18n.AppLanguage
+import com.pda.app.ui.i18n.LocalAppLanguage
+import com.pda.app.ui.i18n.LocalAppStrings
 import com.pda.app.ui.receivereport.ReceiveReportScreen
 import com.pda.app.ui.login.LoginScreen
 import com.pda.app.ui.theme.PdaTheme
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+    /** Read-only here: MainActivity only observes the language; ViewModels own the write path. */
+    @Inject lateinit var userPreferences: UserPreferences
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
+            val langName by userPreferences.appLanguage.collectAsStateWithLifecycle(initialValue = null)
+            val language = AppLanguage.fromName(langName)
+            CompositionLocalProvider(
+                LocalAppStrings provides language.strings,
+                LocalAppLanguage provides language
+            ) {
             PdaTheme {
                 val navController = rememberNavController()
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
@@ -88,6 +105,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+            }
             }
         }
     }

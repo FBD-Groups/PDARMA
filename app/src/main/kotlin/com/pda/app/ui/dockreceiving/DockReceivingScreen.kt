@@ -47,7 +47,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pda.app.data.api.model.ReceivingItemUi
 import com.pda.app.ui.components.PdaTopBar
-import kotlinx.coroutines.launch
+import com.pda.app.ui.i18n.LocalAppStrings
 import java.io.File
 import java.util.concurrent.Executors
 
@@ -60,10 +60,17 @@ fun DockReceivingScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val inputMethod by viewModel.inputMethod.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val strings = LocalAppStrings.current
 
     LaunchedEffect(uiState.message) {
-        uiState.message?.let {
-            snackbarHostState.showSnackbar(it)
+        uiState.message?.let { msg ->
+            val text = when (msg) {
+                is DockMessage.Text -> msg.value
+                DockMessage.SelectWarehouseFirst -> strings.dock_selectWarehouseFirst
+                DockMessage.PhotoProcessingFailed -> strings.dock_photoProcessingFailed
+                is DockMessage.BatchClosed -> strings.dock_batchClosed(msg.number)
+            }
+            snackbarHostState.showSnackbar(text)
             viewModel.messageShown()
         }
     }
@@ -73,8 +80,8 @@ fun DockReceivingScreen(
         topBar = {
             PdaTopBar(
                 title = when (uiState.phase) {
-                    Phase.Idle -> "Dock Receive"
-                    else -> uiState.batchNumber?.let { "Batch $it" } ?: "Dock Receive"
+                    Phase.Idle -> strings.dock_title
+                    else -> uiState.batchNumber?.let { strings.dock_batchTitle(it) } ?: strings.dock_title
                 },
                 onBack = onBack
             )
@@ -137,13 +144,14 @@ private fun IdleContent(
     onMethodChange: (InputMethod) -> Unit,
     onStart: () -> Unit
 ) {
+    val strings = LocalAppStrings.current
     Column(
         modifier = Modifier.fillMaxSize().padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
         Text(
-            "Input Method",
+            strings.dock_inputMethod,
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.fillMaxWidth()
@@ -163,7 +171,7 @@ private fun IdleContent(
                         onClick = { onMethodChange(m) },
                         enabled = !busy
                     )
-                    Text(m.label, style = MaterialTheme.typography.bodyLarge)
+                    Text(m.label(), style = MaterialTheme.typography.bodyLarge)
                 }
             }
         }
@@ -177,9 +185,16 @@ private fun IdleContent(
             modifier = Modifier.fillMaxWidth().height(56.dp)
         ) {
             if (busy) CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-            else Text("Start Batch")
+            else Text(strings.dock_startBatch)
         }
     }
+}
+
+/** 录入方式的本地化标签。 */
+@Composable
+private fun InputMethod.label(): String = when (this) {
+    InputMethod.Picture -> LocalAppStrings.current.dock_inputMethodPicture
+    InputMethod.BarcodeScan -> LocalAppStrings.current.dock_inputMethodBarcode
 }
 
 @Composable
@@ -224,6 +239,7 @@ private fun RecordingBottomBar(
     onConfirm: () -> Unit,
     onCloseBatch: () -> Unit
 ) {
+    val strings = LocalAppStrings.current
     Surface(tonalElevation = 3.dp) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
@@ -234,7 +250,7 @@ private fun RecordingBottomBar(
                 enabled = !state.isBusy,
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.weight(1f).height(48.dp)
-            ) { Text("Close Batch", maxLines = 1) }
+            ) { Text(strings.dock_closeBatch, maxLines = 1) }
             Button(
                 onClick = onConfirm,
                 enabled = state.confirm?.canSave == true,
@@ -243,7 +259,7 @@ private fun RecordingBottomBar(
             ) {
                 if (state.confirm?.saving == true)
                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                else Text("Confirm", maxLines = 1)
+                else Text(strings.dock_confirm, maxLines = 1)
             }
         }
     }
@@ -283,6 +299,7 @@ private fun ScanContent(
 private fun ScanInputField(onScan: (String) -> Unit) {
     val context = LocalContext.current
     val imm = remember { context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager }
+    val hintText = LocalAppStrings.current.dock_scanHint
 
     Surface(
         shape = RoundedCornerShape(12.dp),
@@ -294,7 +311,7 @@ private fun ScanInputField(onScan: (String) -> Unit) {
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
             factory = { ctx ->
                 EditText(ctx).apply {
-                    hint = "Scan or enter tracking #…"
+                    hint = hintText
                     isSingleLine = true
                     background = null
                     textSize = 18f
@@ -338,6 +355,7 @@ private val ScanItemDot = Color(0xFF1D9E75)
 
 @Composable
 private fun ScanItemRow(item: ReceivingItemUi) {
+    val strings = LocalAppStrings.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -347,14 +365,14 @@ private fun ScanItemRow(item: ReceivingItemUi) {
         Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(ScanItemDot))
         Spacer(Modifier.width(10.dp))
         Text(
-            item.trackingNo.ifBlank { "(no tracking #)" },
+            item.trackingNo.ifBlank { strings.dock_noTracking },
             fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.weight(1f)
         )
         if (item.needsReview) {
-            Icon(Icons.Default.Warning, contentDescription = "Needs review", tint = MaterialTheme.colorScheme.error)
+            Icon(Icons.Default.Warning, contentDescription = strings.dock_needsReview, tint = MaterialTheme.colorScheme.error)
         } else if (item.carrier.isNotBlank()) {
             Text(
                 item.carrier,
@@ -374,7 +392,7 @@ private fun ScanBottomBar(onCloseBatch: () -> Unit) {
                 onClick = onCloseBatch,
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth().height(48.dp)
-            ) { Text("Close Batch", maxLines = 1) }
+            ) { Text(LocalAppStrings.current.dock_closeBatch, maxLines = 1) }
         }
     }
 }
@@ -382,20 +400,21 @@ private fun ScanBottomBar(onCloseBatch: () -> Unit) {
 /** 顶部状态条：件数 + 当前上传/识别/已保存状态。 */
 @Composable
 private fun RecordingStatusBar(state: DockReceivingUiState) {
+    val strings = LocalAppStrings.current
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text("${state.itemCount} items", fontWeight = FontWeight.SemiBold)
+        Text(strings.itemCount(state.itemCount), fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.weight(1f))
         val c = state.confirm
         when {
-            c?.uploading == true -> ProcessingStatus("Uploading…")
-            c?.analyzing == true -> ProcessingStatus("Analyzing…")
+            c?.uploading == true -> ProcessingStatus(strings.dock_uploading)
+            c?.analyzing == true -> ProcessingStatus(strings.dock_analyzing)
             c?.uploadFailed == true -> Text(
-                "Upload failed — retake",
+                strings.dock_uploadFailed,
                 color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodySmall
             )
             state.recentlySaved -> Text(
-                "Saved",
+                strings.dock_saved,
                 color = MaterialTheme.colorScheme.primary,
                 style = MaterialTheme.typography.bodySmall,
                 fontWeight = FontWeight.SemiBold
@@ -448,7 +467,7 @@ private fun CameraCapture(
     if (!hasPermission) {
         Box(modifier = modifier.height(200.dp), contentAlignment = Alignment.Center) {
             Text(
-                "Camera permission required. Enable it in Settings and come back.",
+                LocalAppStrings.current.dock_cameraPermission,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
             )
         }
@@ -539,11 +558,12 @@ private fun ConfirmFields(
     onCarrierChange: (String) -> Unit,
     onConditionChange: (String) -> Unit
 ) {
+    val strings = LocalAppStrings.current
     Column(modifier = Modifier.fillMaxWidth()) {
         OutlinedTextField(
             value = confirm.trackingNumber,
             onValueChange = onTrackingChange,
-            label = { Text("Tracking #") },
+            label = { Text(strings.dock_trackingLabel) },
             singleLine = true,
             textStyle = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.fillMaxWidth()
@@ -551,8 +571,8 @@ private fun ConfirmFields(
         Spacer(Modifier.height(8.dp))
         // Carrier 与 Condition 并排，省一行高度。
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            DropdownField("Carrier", confirm.carrier, CARRIERS, onCarrierChange, modifier = Modifier.weight(1f))
-            DropdownField("Condition", confirm.condition, CONDITIONS, onConditionChange, modifier = Modifier.weight(1f))
+            DropdownField(strings.dock_carrier, confirm.carrier, CARRIERS, onCarrierChange, modifier = Modifier.weight(1f))
+            DropdownField(strings.dock_condition, confirm.condition, CONDITIONS, onConditionChange, modifier = Modifier.weight(1f))
         }
     }
 }
@@ -593,24 +613,17 @@ private fun CloseBatchDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val strings = LocalAppStrings.current
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
-        title = { Text("Close Batch") },
-        text = {
-            Text(
-                buildString {
-                    append("$itemCount items")
-                    if (needsReviewCount > 0) append(", $needsReviewCount need review")
-                    append(". Close this batch?")
-                }
-            )
-        },
+        title = { Text(strings.dock_closeBatch) },
+        text = { Text(strings.dock_closeBatchPrompt(itemCount, needsReviewCount)) },
         confirmButton = {
             Button(onClick = onConfirm, enabled = !busy) {
                 if (busy) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                else Text("Close")
+                else Text(strings.dock_close)
             }
         },
-        dismissButton = { OutlinedButton(onClick = onDismiss, enabled = !busy) { Text("Cancel") } }
+        dismissButton = { OutlinedButton(onClick = onDismiss, enabled = !busy) { Text(strings.common_cancel) } }
     )
 }

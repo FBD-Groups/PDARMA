@@ -5,10 +5,21 @@ import java.io.File
 
 enum class Phase { Idle, Recording }
 
-/** Start Batch 时选择的录入方式。Picture = 拍照识别（现有流程）；BarcodeScan = 条码扫描（开发中）。 */
-enum class InputMethod(val label: String) {
-    Picture("Picture"),
-    BarcodeScan("Barcode Scan")
+/** Start Batch 时选择的录入方式。Picture = 拍照识别；BarcodeScan = 条码扫描。标签在 UI 层按语言取。 */
+enum class InputMethod {
+    Picture,
+    BarcodeScan
+}
+
+/**
+ * 一次性提示消息。翻译在 Compose 层完成（ViewModel 不可读 CompositionLocal）：
+ * VM 发出标记，由屏幕用 LocalAppStrings 映射成文本。[Text] 承载后端原始错误（不翻译）。
+ */
+sealed interface DockMessage {
+    data class Text(val value: String) : DockMessage
+    data object SelectWarehouseFirst : DockMessage
+    data object PhotoProcessingFailed : DockMessage
+    data class BatchClosed(val number: String) : DockMessage
 }
 
 /** 单条 label 确认页的状态。 */
@@ -40,7 +51,7 @@ data class DockReceivingUiState(
     val confirm: ConfirmState? = null,
     val isBusy: Boolean = false,          // batch-level op (start/close/refresh) in flight
     val showCloseDialog: Boolean = false,
-    val message: String? = null,          // one-shot snackbar text; cleared via messageShown()
+    val message: DockMessage? = null,     // one-shot snackbar marker; cleared via messageShown()
     val recentlySaved: Boolean = false    // shows "Saved" in the bottom status bar until next capture
 ) {
     val itemCount: Int get() = items.size

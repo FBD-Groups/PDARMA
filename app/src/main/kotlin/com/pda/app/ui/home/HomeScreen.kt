@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pda.app.data.api.model.WarehouseDto
+import com.pda.app.ui.i18n.LocalAppStrings
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -60,6 +61,7 @@ fun HomeScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val strings = LocalAppStrings.current
 
     var menuExpanded by rememberSaveable { mutableStateOf(false) }
 
@@ -86,7 +88,7 @@ fun HomeScreen(
                         ) {
                             Text(
                                 text = uiState.selectedWarehouse?.let { "${it.warehouseCode} · ${it.warehouseName}" }
-                                    ?: "选择仓库",
+                                    ?: strings.home_selectWarehouse,
                                 color = MaterialTheme.colorScheme.onPrimary,
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.SemiBold,
@@ -95,7 +97,7 @@ fun HomeScreen(
                             )
                             Icon(
                                 Icons.Default.ArrowDropDown,
-                                contentDescription = "切换仓库",
+                                contentDescription = strings.home_switchWarehouse,
                                 tint = MaterialTheme.colorScheme.onPrimary,
                                 modifier = Modifier.size(20.dp)
                             )
@@ -123,7 +125,7 @@ fun HomeScreen(
                     Spacer(modifier = Modifier.width(8.dp))
 
                     Text(
-                        text = "你好，${uiState.userFullName}",
+                        text = strings.home_greeting(uiState.userFullName),
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.onPrimary,
                         fontWeight = FontWeight.Medium,
@@ -141,7 +143,7 @@ fun HomeScreen(
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.Logout,
-                            contentDescription = "退出登录",
+                            contentDescription = strings.home_logout,
                             tint = MaterialTheme.colorScheme.onPrimary,
                             modifier = Modifier.size(22.dp)
                         )
@@ -169,12 +171,12 @@ fun HomeScreen(
                             color = MaterialTheme.colorScheme.error,
                             style = MaterialTheme.typography.bodyMedium
                         )
-                        TextButton(onClick = { viewModel.loadWarehouses() }) { Text("重试") }
+                        TextButton(onClick = { viewModel.loadWarehouses() }) { Text(strings.common_retry) }
                     }
                 }
                 is WarehouseState.Success -> {
                     if (state.warehouses.isEmpty()) {
-                        Text("暂无可用仓库", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(strings.home_noWarehouses, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -184,27 +186,27 @@ fun HomeScreen(
             // 功能磁贴行：Dock Receive + 预留
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
                 ActionTile(
-                    label = "Dock Receive",
+                    label = strings.home_dockReceive,
                     icon = Icons.Default.MoveToInbox,
                     enabled = uiState.selectedWarehouse != null,
                     modifier = Modifier.weight(1f)
                 ) {
                     val wh = uiState.selectedWarehouse
                     if (wh == null) {
-                        scope.launch { snackbarHostState.showSnackbar("请先选择仓库") }
+                        scope.launch { snackbarHostState.showSnackbar(strings.home_selectWarehouseFirst) }
                     } else {
                         onNavigateToDockReceiving(wh.id)
                     }
                 }
                 ActionTile(
-                    label = "Receive Report",
+                    label = strings.home_receiveReport,
                     icon = Icons.Default.Assessment,
                     enabled = uiState.selectedWarehouse != null,
                     modifier = Modifier.weight(1f)
                 ) {
                     val wh = uiState.selectedWarehouse
                     if (wh == null) {
-                        scope.launch { snackbarHostState.showSnackbar("请先选择仓库") }
+                        scope.launch { snackbarHostState.showSnackbar(strings.home_selectWarehouseFirst) }
                     } else {
                         onNavigateToReceiveReport(wh.id)
                     }
