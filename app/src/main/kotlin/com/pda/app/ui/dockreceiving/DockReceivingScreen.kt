@@ -27,6 +27,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
@@ -146,6 +147,8 @@ private fun RecordingContent(
 
         CameraCapture(
             modifier = Modifier.fillMaxWidth(),
+            // 确认字段出现时预览压小，保证快门仍可见；瞄准时用大预览。
+            previewHeight = if (state.confirm != null) 220.dp else 320.dp,
             onPhotoCaptured = onPhotoCaptured
         )
     }
@@ -236,6 +239,7 @@ private fun RecordedItemRow(item: ReceivingItemUi) {
 @Composable
 private fun CameraCapture(
     modifier: Modifier = Modifier,
+    previewHeight: Dp = 320.dp,
     onPhotoCaptured: (File) -> Unit
 ) {
     val context = LocalContext.current
@@ -295,7 +299,7 @@ private fun CameraCapture(
                     this.controller = controller
                 }
             },
-            modifier = Modifier.fillMaxWidth().height(320.dp)
+            modifier = Modifier.fillMaxWidth().height(previewHeight)
         )
         Spacer(Modifier.height(12.dp))
         Box(modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp), contentAlignment = Alignment.Center) {
@@ -359,9 +363,11 @@ private fun ConfirmFields(
             modifier = Modifier.fillMaxWidth()
         )
         Spacer(Modifier.height(8.dp))
-        DropdownField("Carrier", confirm.carrier, CARRIERS, onCarrierChange)
-        Spacer(Modifier.height(8.dp))
-        DropdownField("Condition", confirm.condition, CONDITIONS, onConditionChange)
+        // Carrier 与 Condition 并排，省一行高度。
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            DropdownField("Carrier", confirm.carrier, CARRIERS, onCarrierChange, modifier = Modifier.weight(1f))
+            DropdownField("Condition", confirm.condition, CONDITIONS, onConditionChange, modifier = Modifier.weight(1f))
+        }
     }
 }
 
@@ -371,10 +377,11 @@ private fun DropdownField(
     label: String,
     value: String,
     options: List<String>,
-    onValueChange: (String) -> Unit
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
-    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
+    ExposedDropdownMenuBox(modifier = modifier, expanded = expanded, onExpandedChange = { expanded = it }) {
         OutlinedTextField(
             value = value,
             onValueChange = {},
