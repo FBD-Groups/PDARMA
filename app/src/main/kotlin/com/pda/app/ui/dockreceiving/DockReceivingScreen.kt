@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
@@ -156,19 +157,21 @@ private fun RecordingBottomBar(
     Surface(tonalElevation = 3.dp) {
         Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(
+                OutlinedButton(
                     onClick = onCloseBatch,
                     enabled = !state.isBusy,
-                    modifier = Modifier.weight(1f)
-                ) { Text("Close Batch") }
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.weight(1f).height(48.dp)
+                ) { Text("Close Batch", maxLines = 1) }
                 Button(
                     onClick = onConfirm,
                     enabled = state.confirm?.canSave == true,
-                    modifier = Modifier.weight(1f)
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.weight(1f).height(48.dp)
                 ) {
                     if (state.confirm?.saving == true)
                         CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                    else Text("Confirm")
+                    else Text("Confirm", maxLines = 1)
                 }
             }
             Spacer(Modifier.height(6.dp))
@@ -257,6 +260,9 @@ private fun CameraCapture(
     val controller = remember {
         LifecycleCameraController(context).apply {
             cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+            // 拍前等对焦/曝光（3A）收敛再出片，减少糊片，运单号更清晰。
+            // 点按预览对焦由 PreviewView+controller 默认开启（isTapToFocusEnabled 默认 true）。
+            imageCaptureMode = ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY
             // Preview is always enabled when bound to PreviewView; only configure capture.
             setEnabledUseCases(CameraController.IMAGE_CAPTURE)
         }
