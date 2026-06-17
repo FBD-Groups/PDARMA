@@ -5,6 +5,12 @@ import java.io.File
 
 enum class Phase { Idle, Recording }
 
+/** Start Batch 时选择的录入方式。Picture = 拍照识别（现有流程）；BarcodeScan = 条码扫描（开发中）。 */
+enum class InputMethod(val label: String) {
+    Picture("Picture"),
+    BarcodeScan("Barcode Scan")
+}
+
 /** 单条 label 确认页的状态。 */
 data class ConfirmState(
     val photoFile: File,

@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,6 +36,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pda.app.data.api.model.ReceivingItemUi
 import com.pda.app.ui.components.PdaTopBar
+import kotlinx.coroutines.launch
 import java.io.File
 import java.util.concurrent.Executors
 
@@ -46,6 +48,7 @@ fun DockReceivingScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(uiState.message) {
         uiState.message?.let {
@@ -79,7 +82,13 @@ fun DockReceivingScreen(
             when (uiState.phase) {
                 Phase.Idle -> IdleContent(
                     busy = uiState.isBusy,
-                    onStart = viewModel::startBatch
+                    onStart = { method ->
+                        when (method) {
+                            InputMethod.Picture -> viewModel.startBatch()
+                            InputMethod.BarcodeScan ->
+                                scope.launch { snackbarHostState.showSnackbar("条码扫描开发中") }
+                        }
+                    }
                 )
                 Phase.Recording -> RecordingContent(
                     state = uiState,
@@ -103,10 +112,41 @@ fun DockReceivingScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun IdleContent(busy: Boolean, onStart: () -> Unit) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Button(onClick = onStart, enabled = !busy, modifier = Modifier.height(56.dp)) {
+private fun IdleContent(busy: Boolean, onStart: (InputMethod) -> Unit) {
+    var method by rememberSaveable { mutableStateOf(InputMethod.Picture) }
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(
+            "Input Method",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(Modifier.height(8.dp))
+        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+            InputMethod.entries.forEachIndexed { index, m ->
+                SegmentedButton(
+                    selected = method == m,
+                    onClick = { method = m },
+                    enabled = !busy,
+                    shape = SegmentedButtonDefaults.itemShape(index, InputMethod.entries.size)
+                ) { Text(m.label) }
+            }
+        }
+
+        Spacer(Modifier.height(28.dp))
+
+        Button(
+            onClick = { onStart(method) },
+            enabled = !busy,
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth().height(56.dp)
+        ) {
             if (busy) CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
             else Text("Start Batch")
         }
