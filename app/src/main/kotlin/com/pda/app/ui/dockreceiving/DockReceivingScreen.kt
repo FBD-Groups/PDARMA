@@ -264,6 +264,12 @@ private fun CameraCapture(
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
     DisposableEffect(lifecycleOwner) {
         controller.bindToLifecycle(lifecycleOwner)
+        // 优先后置；模拟器 / 单摄 PDA 没有后置时，初始化完成后回退到可用相机，
+        // 避免一直绑后置失败而黑屏。
+        controller.initializationFuture.addListener({
+            val hasBack = runCatching { controller.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA) }.getOrDefault(true)
+            if (!hasBack) controller.cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
+        }, ContextCompat.getMainExecutor(context))
         onDispose {
             controller.unbind()
             cameraExecutor.shutdown()
