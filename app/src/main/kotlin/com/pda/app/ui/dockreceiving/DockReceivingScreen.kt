@@ -15,9 +15,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
@@ -122,7 +122,13 @@ private fun RecordingContent(
     onCarrierChange: (String) -> Unit,
     onConditionChange: (String) -> Unit
 ) {
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+    // 整页可滚动：预览固定比例、快门紧跟其下；内容多了就滚动，不挤压、不拉伸预览。
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp)
+    ) {
         // Confirm fields on top (after capture).
         state.confirm?.let { confirm ->
             ConfirmFields(
@@ -134,18 +140,14 @@ private fun RecordingContent(
             Spacer(Modifier.height(12.dp))
         }
 
-        // Recorded items: bounded + scrollable so they never squeeze the camera/shutter below.
+        // Recorded items (页面已可滚动，用普通行即可，不再嵌套 LazyColumn)。
         if (state.items.isNotEmpty()) {
-            LazyColumn(modifier = Modifier.heightIn(max = 160.dp).fillMaxWidth()) {
-                items(state.items, key = { it.receivingItemId }) { item -> RecordedItemRow(item) }
-            }
+            state.items.forEach { item -> RecordedItemRow(item) }
             Spacer(Modifier.height(8.dp))
         }
 
-        // Camera takes the remaining space; the preview shrinks but the shutter stays a
-        // fixed size at the bottom (see CameraCapture). weight(1f) absorbs any overflow.
         CameraCapture(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth(),
             onPhotoCaptured = onPhotoCaptured
         )
     }
@@ -280,8 +282,7 @@ private fun CameraCapture(
     }
 
     Column(modifier = modifier) {
-        // Preview takes the leftover space and shrinks when confirm fields are shown;
-        // the shutter below keeps a fixed size and position regardless.
+        // 预览固定 3:4 竖图，大小恒定（不随上方内容伸缩）；快门紧跟其下。
         AndroidView(
             factory = { ctx ->
                 PreviewView(ctx).apply {
@@ -291,7 +292,7 @@ private fun CameraCapture(
                     this.controller = controller
                 }
             },
-            modifier = Modifier.fillMaxWidth().weight(1f)
+            modifier = Modifier.fillMaxWidth().aspectRatio(3f / 4f)
         )
         Spacer(Modifier.height(12.dp))
         Box(modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp), contentAlignment = Alignment.Center) {
