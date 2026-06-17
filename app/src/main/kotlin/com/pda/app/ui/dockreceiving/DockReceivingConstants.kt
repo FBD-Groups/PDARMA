@@ -26,5 +26,5 @@ fun sanitizeTracking(raw: String?): String {
     val valid = compact.length in 8..40 &&
         compact.all { it.isLetterOrDigit() } &&
         compact.count { it.isDigit() } >= 6
-    return if (valid) cleaned else ""
+    return if (valid) compact else ""
 }

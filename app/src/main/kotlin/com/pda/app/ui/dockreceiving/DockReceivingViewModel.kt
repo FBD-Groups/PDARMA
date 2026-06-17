@@ -159,7 +159,7 @@ class DockReceivingViewModel @Inject constructor(
         val c = state.confirm ?: return
         val bid = state.batchId ?: return
         val photoPath = c.photoPath ?: return
-        val tracking = c.trackingNumber.trim()
+        val tracking = c.trackingNumber.replace("\\s+".toRegex(), "")
         val req = CreateItemRequest(
             receivingBatchId = bid,
             trackingNumber = tracking.ifBlank { null },
@@ -191,7 +191,7 @@ class DockReceivingViewModel @Inject constructor(
 
     /** 扫码模式：直接用运单号建条目（无照片，source=Barcode），成功后刷新列表。 */
     fun scanItem(tracking: String) {
-        val t = tracking.trim()
+        val t = tracking.replace("\\s+".toRegex(), "")
         if (t.isBlank()) return
         val bid = _uiState.value.batchId ?: return
         val req = CreateItemRequest(
