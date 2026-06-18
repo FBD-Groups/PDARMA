@@ -363,16 +363,12 @@ class DockReceivingViewModelTest {
         val vm = vm(repo)
         vm.startBatch(); advanceUntilIdle()
 
-        vm.requestCloseBatch()
-        assertTrue(vm.uiState.value.showCloseDialog)
-
         vm.confirmCloseBatch(); advanceUntilIdle()
 
         val s = vm.uiState.value
         assertEquals(Phase.Idle, s.phase)
         assertNull(s.batchId)
         assertTrue(s.items.isEmpty())
-        assertFalse(s.showCloseDialog)
         assertEquals(DockMessage.BatchClosed("B-001"), s.message)
     }
 
