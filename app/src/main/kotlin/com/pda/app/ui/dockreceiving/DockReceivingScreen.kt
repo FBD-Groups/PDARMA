@@ -16,6 +16,7 @@ import androidx.camera.core.ImageCaptureException
 import androidx.camera.view.CameraController
 import android.text.InputType
 import android.view.GestureDetector
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
@@ -457,6 +458,7 @@ private fun ScanInputField(onScan: (String) -> Unit) {
                     imeOptions = EditorInfo.IME_ACTION_DONE
                     inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
                     showSoftInputOnFocus = false
+                    // 软键盘 Done 按钮（手动输入时）
                     setOnEditorActionListener { v, actionId, _ ->
                         if (actionId == EditorInfo.IME_ACTION_DONE) {
                             val t = v.text.toString().trim()
@@ -466,6 +468,17 @@ private fun ScanInputField(onScan: (String) -> Unit) {
                             }
                             showSoftInputOnFocus = false
                             imm.hideSoftInputFromWindow(v.windowToken, 0)
+                            true
+                        } else false
+                    }
+                    // DataWedge / 扫码枪发 KEYCODE_ENTER 硬件事件，不走 IME 路径，需单独捕获。
+                    setOnKeyListener { _, keyCode, event ->
+                        if (event.action == KeyEvent.ACTION_DOWN && keyCode == KeyEvent.KEYCODE_ENTER) {
+                            val t = text.toString().trim()
+                            if (t.isNotEmpty()) {
+                                onScan(t)
+                                setText("")
+                            }
                             true
                         } else false
                     }
