@@ -30,7 +30,8 @@ import com.pda.app.ui.i18n.LocalAppStrings
 @Composable
 fun PdaTopBar(
     title: String,
-    onBack: (() -> Unit)? = null
+    onBack: (() -> Unit)? = null,
+    trailing: @Composable (() -> Unit)? = null
 ) {
     Surface(
         color = MaterialTheme.colorScheme.primary,
@@ -63,8 +64,14 @@ fun PdaTopBar(
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onPrimary,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
             )
+            if (trailing != null) {
+                Spacer(modifier = Modifier.width(8.dp))
+                trailing()
+                Spacer(modifier = Modifier.width(8.dp))
+            }
         }
     }
 }

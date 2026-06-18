@@ -24,6 +24,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -240,7 +241,10 @@ class DockReceivingViewModelTest {
         assertEquals("/p/abc.jpg", repo.lastCreateItemReq!!.photoPath)
         val s = vm.uiState.value
         assertEquals(Phase.Recording, s.phase)
-        assertNull(s.confirm)
+        // 保存后重置为空草稿（Tracking # 框常驻），而非移除。
+        assertNotNull(s.confirm)
+        assertEquals("", s.confirm!!.trackingNumber)
+        assertNull(s.confirm!!.photoFile)
         assertEquals(1, s.itemCount)
         assertEquals(1, s.needsReviewCount)
     }
@@ -277,7 +281,9 @@ class DockReceivingViewModelTest {
         vm.cancelConfirm()
 
         assertEquals(Phase.Recording, vm.uiState.value.phase)
-        assertNull(vm.uiState.value.confirm)
+        // 取消后回到空草稿（框常驻），不再是 null。
+        assertNotNull(vm.uiState.value.confirm)
+        assertEquals("", vm.uiState.value.confirm!!.trackingNumber)
     }
 
     @Test

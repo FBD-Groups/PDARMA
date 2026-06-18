@@ -85,7 +85,18 @@ fun DockReceivingScreen(
                     Phase.Idle -> strings.dock_title
                     else -> uiState.batchNumber?.let { strings.dock_batchTitle(it) } ?: strings.dock_title
                 },
-                onBack = onBack
+                onBack = onBack,
+                trailing = if (uiState.phase == Phase.Recording) {
+                    {
+                        Text(
+                            strings.itemCount(uiState.itemCount),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            maxLines = 1
+                        )
+                    }
+                } else null
             )
         },
         bottomBar = {
@@ -126,6 +137,14 @@ fun DockReceivingScreen(
                 }
             }
 
+            // 处理状态：居中大号半透明悬浮层，覆盖在预览上方、不占布局。
+            val c = uiState.confirm
+            when {
+                c?.uploading == true -> ProcessingOverlay(strings.dock_uploading, showSpinner = true, isError = false)
+                c?.analyzing == true -> ProcessingOverlay(strings.dock_analyzing, showSpinner = true, isError = false)
+                c?.uploadFailed == true -> ProcessingOverlay(strings.dock_uploadFailed, showSpinner = false, isError = true)
+            }
+
             if (uiState.showCloseDialog) {
                 CloseBatchDialog(
                     itemCount = uiState.itemCount,
@@ -135,6 +154,36 @@ fun DockReceivingScreen(
                     onDismiss = viewModel::dismissCloseDialog
                 )
             }
+        }
+    }
+}
+
+/** 居中、半透明、大号的处理状态悬浮层（不占布局，覆盖在预览之上）。 */
+@Composable
+private fun BoxScope.ProcessingOverlay(text: String, showSpinner: Boolean, isError: Boolean) {
+    Surface(
+        modifier = Modifier.align(Alignment.Center).padding(24.dp),
+        shape = RoundedCornerShape(16.dp),
+        color = Color.Black.copy(alpha = 0.55f)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 24.dp, vertical = 18.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (showSpinner) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(30.dp),
+                    strokeWidth = 3.dp,
+                    color = Color.White
+                )
+                Spacer(Modifier.width(14.dp))
+            }
+            Text(
+                text,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = if (isError) MaterialTheme.colorScheme.error else Color.White
+            )
         }
     }
 }
@@ -207,38 +256,30 @@ private fun RecordingContent(
     onCarrierChange: (String) -> Unit,
     onConditionChange: (String) -> Unit
 ) {
-    val confirm = state.confirm
-    if (confirm == null) {
-        // 瞄准态：无确认字段，大预览贴底（用 weight 把相机顶到底部）。
-        Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-            RecordingStatusBar(state)
-            Spacer(Modifier.weight(1f))
-            CameraCapture(
-                modifier = Modifier.fillMaxWidth(),
-                previewHeight = 320.dp,
-                onPhotoCaptured = onPhotoCaptured
-            )
-        }
-    } else {
-        // 确认态：字段在上、可滚动，预览压小放最下，保证 Tracking # 始终可见可达。
+    // 单一结构（两态一致，相机绝不跳动）：
+    //  · 状态栏固定在顶
+    //  · 中间区域占满剩余空间，承载确认字段（瞄准态为空），可滚动；它把相机顶到底
+    //  · 相机固定高度，永远贴在最底部、紧挨下方按钮
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Column(
-            modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())
+            modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())
         ) {
-            RecordingStatusBar(state)
-            Spacer(Modifier.height(8.dp))
-            ConfirmFields(
-                confirm = confirm,
-                onTrackingChange = onTrackingChange,
-                onCarrierChange = onCarrierChange,
-                onConditionChange = onConditionChange
-            )
-            Spacer(Modifier.height(12.dp))
-            CameraCapture(
-                modifier = Modifier.fillMaxWidth(),
-                previewHeight = 170.dp,
-                onPhotoCaptured = onPhotoCaptured
-            )
+            state.confirm?.let { confirm ->
+                ConfirmFields(
+                    confirm = confirm,
+                    onTrackingChange = onTrackingChange,
+                    onCarrierChange = onCarrierChange,
+                    onConditionChange = onConditionChange
+                )
+            }
         }
+
+        Spacer(Modifier.height(8.dp))
+        CameraCapture(
+            modifier = Modifier.fillMaxWidth(),
+            previewHeight = 240.dp,
+            onPhotoCaptured = onPhotoCaptured
+        )
     }
 }
 
@@ -284,9 +325,6 @@ private fun ScanContent(
     onScan: (String) -> Unit
 ) {
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        RecordingStatusBar(state)
-        Spacer(Modifier.height(8.dp))
-
         ScanInputField(onScan = onScan)
 
         Spacer(Modifier.height(8.dp))
@@ -406,49 +444,6 @@ private fun ScanBottomBar(onCloseBatch: () -> Unit) {
     }
 }
 
-/** 顶部状态条：件数 + 当前上传/识别/已保存状态。 */
-@Composable
-private fun RecordingStatusBar(state: DockReceivingUiState) {
-    val strings = LocalAppStrings.current
-    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(strings.itemCount(state.itemCount), fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.weight(1f))
-        val c = state.confirm
-        when {
-            c?.uploading == true -> ProcessingStatus(strings.dock_uploading)
-            c?.analyzing == true -> ProcessingStatus(strings.dock_analyzing)
-            c?.uploadFailed == true -> Text(
-                strings.dock_uploadFailed,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall
-            )
-            state.recentlySaved -> Text(
-                strings.dock_saved,
-                color = MaterialTheme.colorScheme.primary,
-                style = MaterialTheme.typography.bodySmall,
-                fontWeight = FontWeight.SemiBold
-            )
-        }
-    }
-}
-
-@Composable
-private fun ProcessingStatus(text: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        CircularProgressIndicator(
-            modifier = Modifier.size(20.dp),
-            strokeWidth = 2.5.dp,
-            color = MaterialTheme.colorScheme.primary
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(
-            text,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary
-        )
-    }
-}
 
 @Composable
 private fun CameraCapture(

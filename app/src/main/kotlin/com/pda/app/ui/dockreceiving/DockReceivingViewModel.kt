@@ -64,7 +64,9 @@ class DockReceivingViewModel @Inject constructor(
                             inputMethod = method,
                             batchId = result.data.batchId,
                             batchNumber = result.data.batchNumber,
-                            items = emptyList()
+                            items = emptyList(),
+                            // 拍照模式：进入即给一个空草稿，Tracking # 框常驻可见可输。
+                            confirm = if (method == InputMethod.Picture) ConfirmState() else null
                         )
                     }
                     is NetworkResult.Error -> _uiState.update {
@@ -76,11 +78,21 @@ class DockReceivingViewModel @Inject constructor(
     }
 
     fun onPhotoCaptured(file: File) {
-        // Inline confirm fields (no separate page). Retaking replaces the pending capture,
-        // so delete the previous temp photo first to avoid leaking cache files.
+        // 重拍替换上一张待处理照片，先删旧临时文件避免缓存泄漏。
+        // 保留用户可能已手输的运单号/承运商，仅把照片与上传/识别状态挂上当前草稿。
         _uiState.value.confirm?.photoFile?.delete()
         _uiState.update {
-            it.copy(confirm = ConfirmState(photoFile = file), recentlySaved = false)
+            val prev = it.confirm ?: ConfirmState()
+            it.copy(
+                confirm = prev.copy(
+                    photoFile = file,
+                    uploading = true,
+                    analyzing = true,
+                    photoPath = null,
+                    uploadFailed = false
+                ),
+                recentlySaved = false
+            )
         }
         viewModelScope.launch {
             val img = try {
@@ -151,21 +163,22 @@ class DockReceivingViewModel @Inject constructor(
 
     fun cancelConfirm() {
         _uiState.value.confirm?.photoFile?.delete()
-        _uiState.update { it.copy(confirm = null) }
+        // 清空回空草稿（Tracking # 框常驻），而非整段移除。
+        _uiState.update { it.copy(confirm = ConfirmState()) }
     }
 
     fun saveItem() {
         val state = _uiState.value
         val c = state.confirm ?: return
         val bid = state.batchId ?: return
-        val photoPath = c.photoPath ?: return
         val tracking = c.trackingNumber.replace("\\s+".toRegex(), "")
+        if (tracking.isBlank() && c.photoPath == null) return  // 无运单号也无照片，无可保存内容
         val req = CreateItemRequest(
             receivingBatchId = bid,
             trackingNumber = tracking.ifBlank { null },
             carrier = c.carrier.ifBlank { null },
             condition = c.condition.ifBlank { null },
-            photoPath = photoPath,
+            photoPath = c.photoPath,        // 可为 null（纯手输，无照片）
             source = "AI",
             rawJson = c.rawJson,
             needsReview = tracking.isBlank()
@@ -176,9 +189,9 @@ class DockReceivingViewModel @Inject constructor(
                 when (result) {
                     is NetworkResult.Loading -> {}
                     is NetworkResult.Success -> {
-                        c.photoFile.delete()
-                        // "Saved" 显示在底部信息条（不再用会遮挡预览的 snackbar）。
-                        _uiState.update { it.copy(confirm = null, recentlySaved = true) }
+                        c.photoFile?.delete()
+                        // 重置为空草稿：Tracking # 框继续常驻，可录下一单。
+                        _uiState.update { it.copy(confirm = ConfirmState(), recentlySaved = true) }
                         refreshItems(bid)
                     }
                     is NetworkResult.Error -> _uiState.update {

@@ -22,12 +22,15 @@ sealed interface DockMessage {
     data class BatchClosed(val number: String) : DockMessage
 }
 
-/** 单条 label 确认页的状态。 */
+/**
+ * 单条 label 的录入草稿。**进入录货即存在**（Tracking # 框常驻），照片可选：
+ * 可以先手输/扫码运单号，也可以拍照让 AI 识别填入同一草稿。
+ */
 data class ConfirmState(
-    val photoFile: File,
-    val uploading: Boolean = true,
-    val analyzing: Boolean = true,
-    val photoPath: String? = null,        // 上传成功后填入；为 null 时不可保存
+    val photoFile: File? = null,          // 拍照后填入；为 null 表示尚未拍照（纯手输）
+    val uploading: Boolean = false,
+    val analyzing: Boolean = false,
+    val photoPath: String? = null,        // 上传成功后填入
     val uploadFailed: Boolean = false,
     val trackingNumber: String = "",
     val carrier: String = "",
@@ -37,9 +40,13 @@ data class ConfirmState(
     val carrierAutoFilled: Boolean = false,
     val saving: Boolean = false
 ) {
-    /** 可保存：照片已上传、未在上传/保存中，且运单号非空（自动识别或手工输入均可）。 */
+    /**
+     * 可保存：有运单号、未在上传/保存中；若拍了照则必须等上传完成（拿到 photoPath），
+     * 没拍照（纯手输）则直接可存。
+     */
     val canSave: Boolean
-        get() = photoPath != null && !uploading && !saving && trackingNumber.isNotBlank()
+        get() = trackingNumber.isNotBlank() && !uploading && !saving &&
+            (photoFile == null || photoPath != null)
 }
 
 data class DockReceivingUiState(
