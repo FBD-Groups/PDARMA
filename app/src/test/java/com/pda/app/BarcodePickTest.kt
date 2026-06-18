@@ -44,4 +44,18 @@ class BarcodePickTest {
     fun `returns null for empty input`() {
         assertNull(pickTrackingBarcode(emptyList()))
     }
+
+    @Test
+    fun `extracts USPS tracking from GS1-128 with AIM prefix and ZIP concatenated`() {
+        // Real-world USPS GS1-128: AIM-prefix(]C1) + AI420+ZIP(42091765) + USPS tracking
+        val picked = pickTrackingBarcode(listOf("]C1420917659400136110139348703814"))
+        assertEquals("9400136110139348703814", picked)
+    }
+
+    @Test
+    fun `strips AIM prefix from plain Code 128 UPS tracking`() {
+        // AIM prefix ]C1 followed directly by UPS 1Z tracking
+        val picked = pickTrackingBarcode(listOf("]C11Z999AA10123456784"))
+        assertEquals("1Z999AA10123456784", picked)
+    }
 }
