@@ -7,6 +7,7 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
@@ -112,15 +113,20 @@ fun DockReceivingScreen(
                     InputMethod.Picture -> RecordingBottomBar(
                         state = uiState,
                         onConfirm = viewModel::saveItem,
-                        onCloseBatch = viewModel::requestCloseBatch
+                        onCloseBatch = viewModel::confirmCloseBatch
                     )
                     InputMethod.BarcodeScan -> ScanBottomBar(
-                        onCloseBatch = viewModel::requestCloseBatch
+                        onCloseBatch = viewModel::confirmCloseBatch
                     )
                 }
             }
         }
     ) { padding ->
+        // 录货中按返回键直接关闭批次（与 Close Batch 按钮行为一致）。
+        if (uiState.phase == Phase.Recording) {
+            BackHandler(enabled = !uiState.isBusy) { viewModel.confirmCloseBatch() }
+        }
+
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             when (uiState.phase) {
                 Phase.Idle -> IdleContent(
@@ -149,16 +155,6 @@ fun DockReceivingScreen(
             val c = uiState.confirm
             if (c != null && (c.barcodeDecoding || c.uploading || c.analyzing || c.uploadFailed)) {
                 ProcessingOverlay(confirm = c)
-            }
-
-            if (uiState.showCloseDialog) {
-                CloseBatchDialog(
-                    itemCount = uiState.itemCount,
-                    needsReviewCount = uiState.needsReviewCount,
-                    busy = uiState.isBusy,
-                    onConfirm = viewModel::confirmCloseBatch,
-                    onDismiss = viewModel::dismissCloseDialog
-                )
             }
         }
     }
@@ -752,27 +748,4 @@ private fun DropdownField(
             }
         }
     }
-}
-
-@Composable
-private fun CloseBatchDialog(
-    itemCount: Int,
-    needsReviewCount: Int,
-    busy: Boolean,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    val strings = LocalAppStrings.current
-    AlertDialog(
-        onDismissRequest = { if (!busy) onDismiss() },
-        title = { Text(strings.dock_closeBatch) },
-        text = { Text(strings.dock_closeBatchPrompt(itemCount, needsReviewCount)) },
-        confirmButton = {
-            Button(onClick = onConfirm, enabled = !busy) {
-                if (busy) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                else Text(strings.dock_close)
-            }
-        },
-        dismissButton = { OutlinedButton(onClick = onDismiss, enabled = !busy) { Text(strings.common_cancel) } }
-    )
 }

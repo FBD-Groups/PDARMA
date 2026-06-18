@@ -284,9 +284,6 @@ class DockReceivingViewModel @Inject constructor(
         }
     }
 
-    fun requestCloseBatch() = _uiState.update { it.copy(showCloseDialog = true) }
-    fun dismissCloseDialog() = _uiState.update { it.copy(showCloseDialog = false) }
-
     fun confirmCloseBatch() {
         val bid = _uiState.value.batchId ?: return
         val number = _uiState.value.batchNumber
@@ -298,7 +295,7 @@ class DockReceivingViewModel @Inject constructor(
                         DockReceivingUiState(message = DockMessage.BatchClosed(number.orEmpty()))
                     }
                     is NetworkResult.Error -> _uiState.update {
-                        it.copy(isBusy = false, showCloseDialog = false, message = DockMessage.Text(result.message))
+                        it.copy(isBusy = false, message = DockMessage.Text(result.message))
                     }
                 }
             }

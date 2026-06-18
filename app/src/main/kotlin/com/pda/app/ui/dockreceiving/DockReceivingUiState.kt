@@ -61,7 +61,6 @@ data class DockReceivingUiState(
     val items: List<ReceivingItemUi> = emptyList(),
     val confirm: ConfirmState? = null,
     val isBusy: Boolean = false,          // batch-level op (start/close/refresh) in flight
-    val showCloseDialog: Boolean = false,
     val message: DockMessage? = null,     // one-shot snackbar marker; cleared via messageShown()
     val recentlySaved: Boolean = false    // shows "Saved" in the bottom status bar until next capture
 ) {
