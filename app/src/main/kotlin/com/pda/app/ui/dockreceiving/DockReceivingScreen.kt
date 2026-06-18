@@ -1,7 +1,10 @@
 package com.pda.app.ui.dockreceiving
 
 import android.Manifest
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.hardware.Sensor
 import android.hardware.SensorEvent
@@ -412,11 +415,31 @@ private fun RecordingBottomBar(
  * 扫码模式录入页：无相机预览。输入框默认获取焦点以接收扫码枪输入，但**不弹软键盘**
  * （buttons 不被遮挡）；需要手动输入时**双击输入框**才弹出软键盘。扫码/回车后自动建条目。
  */
+/** DataWedge Intent Output 的 Action，需在 DataWedge 配置里设置一致。 */
+private const val DW_SCAN_ACTION = "com.pda.app.SCAN_BARCODE"
+/** DataWedge 扫码结果的 Extra key（固定值，由 DataWedge SDK 定义）。 */
+private const val DW_DATA_EXTRA = "com.symbol.datawedge.data_string"
+
 @Composable
 private fun ScanContent(
     state: DockReceivingUiState,
     onScan: (String) -> Unit
 ) {
+    val context = LocalContext.current
+    // DataWedge Intent Output：不依赖焦点/IME，TC26 最可靠的接收方式。
+    // DataWedge 配置：Intent Output → 开启，Action = com.pda.app.SCAN_BARCODE，Delivery = Broadcast。
+    DisposableEffect(Unit) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(ctx: Context, intent: Intent) {
+                val data = intent.getStringExtra(DW_DATA_EXTRA)?.trim() ?: return
+                if (data.isNotEmpty()) onScan(data)
+            }
+        }
+        val filter = IntentFilter(DW_SCAN_ACTION)
+        ContextCompat.registerReceiver(context, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        onDispose { context.unregisterReceiver(receiver) }
+    }
+
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         ScanInputField(onScan = onScan)
 
