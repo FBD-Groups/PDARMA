@@ -53,6 +53,9 @@ interface AppStrings {
     val dock_trackingLabel: String
     val dock_carrier: String
     val dock_condition: String
+    val dock_barcodeScanning: String
+    val dock_barcodeOk: String
+    val dock_barcodeNotFound: String
     val dock_uploading: String
     val dock_analyzing: String
     val dock_uploadFailed: String

@@ -39,7 +39,10 @@ data class ConfirmState(
     val rawJson: String? = null,
     val trackingAutoFilled: Boolean = false,
     val carrierAutoFilled: Boolean = false,
-    val saving: Boolean = false
+    val saving: Boolean = false,
+    val barcodeDecoding: Boolean = false,     // 条码解码进行中（拍照 → 解出/超时后清）
+    val barcodeTracking: String? = null,     // 本地条码解出的运单号，暂存到 AI 返回后再合并
+    val trackingFromBarcode: Boolean = false // 最终运单号取自条码 → source=Barcode
 ) {
     /**
      * 可保存：有运单号、未在上传/保存中；若拍了照则必须等上传完成（拿到 photoPath），

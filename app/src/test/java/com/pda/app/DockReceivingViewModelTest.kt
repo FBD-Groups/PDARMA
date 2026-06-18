@@ -8,6 +8,7 @@ import com.pda.app.data.api.model.CreateItemRequest
 import com.pda.app.data.api.model.ReceivingItemUi
 import com.pda.app.data.api.model.ShippingAnalysis
 import com.pda.app.data.repository.ReceivingRepository
+import com.pda.app.ui.dockreceiving.BarcodeDecoder
 import com.pda.app.ui.dockreceiving.CompressedImage
 import com.pda.app.ui.dockreceiving.DockMessage
 import com.pda.app.ui.dockreceiving.DockReceivingViewModel
@@ -69,6 +70,10 @@ private class FakeImageEncoder : ImageEncoder {
     override suspend fun compress(file: File) = CompressedImage(byteArrayOf(1, 2, 3), "BASE64")
 }
 
+private class FakeBarcodeDecoder(private val result: String? = null) : BarcodeDecoder {
+    override suspend fun decodeTracking(file: File) = result
+}
+
 private class FakeUserPreferences(private var inputMethod: String? = null) : UserPreferences {
     override val lastUsername = flowOf<String?>(null)
     override val lastPassword = flowOf<String?>(null)
@@ -82,10 +87,15 @@ private class FakeUserPreferences(private var inputMethod: String? = null) : Use
     override suspend fun setAppLanguage(name: String) {}
 }
 
-private fun vm(repo: ReceivingRepository, warehouseId: String? = "7"): DockReceivingViewModel =
+private fun vm(
+    repo: ReceivingRepository,
+    warehouseId: String? = "7",
+    barcode: String? = null
+): DockReceivingViewModel =
     DockReceivingViewModel(
         repo,
         FakeImageEncoder(),
+        FakeBarcodeDecoder(barcode),
         FakeUserPreferences(),
         SavedStateHandle(mapOf("warehouseId" to warehouseId))
     )
@@ -265,6 +275,64 @@ class DockReceivingViewModelTest {
 
         assertEquals(false, repo.lastCreateItemReq!!.needsReview)
         assertEquals("1Z999AA10123456784", repo.lastCreateItemReq!!.trackingNumber)
+    }
+
+    @Test
+    fun `barcode result overrides AI tracking and tags source Barcode`() = runTest {
+        val repo = FakeReceivingRepository().apply {
+            createBatchFlow = { flowOf(NetworkResult.Success(BatchInfo(42, "B-001"))) }
+            uploadFlow = { flowOf(NetworkResult.Success("/p/abc.jpg")) }
+            // AI 给出一个不同的运单号；条码应当优先。
+            analyzeFlow = { flowOf(NetworkResult.Success(ShippingAnalysis("AI_WRONG_123456", "UPS", null, "{}"))) }
+            getItemsFlow = { flowOf(NetworkResult.Success(emptyList())) }
+        }
+        val vm = vm(repo, barcode = "1Z999AA10123456784")
+        vm.startBatch(); advanceUntilIdle()
+        vm.onPhotoCaptured(File("capture.jpg")); advanceUntilIdle()
+
+        val c = vm.uiState.value.confirm!!
+        assertEquals("1Z999AA10123456784", c.trackingNumber)
+        assertTrue(c.trackingFromBarcode)
+
+        vm.saveItem(); advanceUntilIdle()
+        assertEquals("1Z999AA10123456784", repo.lastCreateItemReq!!.trackingNumber)
+        assertEquals("Barcode", repo.lastCreateItemReq!!.source)
+    }
+
+    @Test
+    fun `falls back to AI tracking when no barcode, source AI`() = runTest {
+        val repo = FakeReceivingRepository().apply {
+            createBatchFlow = { flowOf(NetworkResult.Success(BatchInfo(42, "B-001"))) }
+            uploadFlow = { flowOf(NetworkResult.Success("/p/abc.jpg")) }
+            analyzeFlow = { flowOf(NetworkResult.Success(ShippingAnalysis("1Z999AA10123456784", "UPS", null, "{}"))) }
+            getItemsFlow = { flowOf(NetworkResult.Success(emptyList())) }
+        }
+        val vm = vm(repo, barcode = null)
+        vm.startBatch(); advanceUntilIdle()
+        vm.onPhotoCaptured(File("capture.jpg")); advanceUntilIdle()
+
+        assertFalse(vm.uiState.value.confirm!!.trackingFromBarcode)
+        vm.saveItem(); advanceUntilIdle()
+        assertEquals("1Z999AA10123456784", repo.lastCreateItemReq!!.trackingNumber)
+        assertEquals("AI", repo.lastCreateItemReq!!.source)
+    }
+
+    @Test
+    fun `barcode fills tracking even when AI analysis fails`() = runTest {
+        val repo = FakeReceivingRepository().apply {
+            createBatchFlow = { flowOf(NetworkResult.Success(BatchInfo(42, "B-001"))) }
+            uploadFlow = { flowOf(NetworkResult.Success("/p/abc.jpg")) }
+            analyzeFlow = { flowOf(NetworkResult.Error("AI 暂不可用", 502)) }
+            getItemsFlow = { flowOf(NetworkResult.Success(emptyList())) }
+        }
+        val vm = vm(repo, barcode = "1Z999AA10123456784")
+        vm.startBatch(); advanceUntilIdle()
+        vm.onPhotoCaptured(File("capture.jpg")); advanceUntilIdle()
+
+        val c = vm.uiState.value.confirm!!
+        assertEquals("1Z999AA10123456784", c.trackingNumber)
+        assertTrue(c.trackingFromBarcode)
+        assertTrue(c.canSave)
     }
 
     @Test

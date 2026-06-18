@@ -3,6 +3,10 @@ package com.pda.app.ui.dockreceiving
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
@@ -17,6 +21,7 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import androidx.camera.view.LifecycleCameraController
 import androidx.camera.view.PreviewView
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -52,6 +57,7 @@ import com.pda.app.ui.components.PdaTopBar
 import com.pda.app.ui.i18n.LocalAppStrings
 import java.io.File
 import java.util.concurrent.Executors
+import kotlin.math.sqrt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -138,12 +144,11 @@ fun DockReceivingScreen(
                 }
             }
 
-            // 处理状态：居中大号半透明悬浮层，覆盖在预览上方、不占布局。
+            // 处理状态：多行半透明悬浮层，覆盖在预览上方、不占布局。
+            // 只要有任意一项仍在进行就保持可见；全部结束后自动消失。
             val c = uiState.confirm
-            when {
-                c?.uploading == true -> ProcessingOverlay(strings.dock_uploading, showSpinner = true, isError = false)
-                c?.analyzing == true -> ProcessingOverlay(strings.dock_analyzing, showSpinner = true, isError = false)
-                c?.uploadFailed == true -> ProcessingOverlay(strings.dock_uploadFailed, showSpinner = false, isError = true)
+            if (c != null && (c.barcodeDecoding || c.uploading || c.analyzing || c.uploadFailed)) {
+                ProcessingOverlay(confirm = c)
             }
 
             if (uiState.showCloseDialog) {
@@ -159,33 +164,71 @@ fun DockReceivingScreen(
     }
 }
 
-/** 居中、半透明、大号的处理状态悬浮层（不占布局，覆盖在预览之上）。 */
+/**
+ * 多行半透明悬浮层（不占布局）：
+ *  - 条码行：始终显示，扫描中/OK/未找到
+ *  - 上传行：上传中或失败时显示
+ *  - 识别行：AI 识别中时显示
+ * 全部结束后由调用方隐藏整个 overlay。
+ */
 @Composable
-private fun BoxScope.ProcessingOverlay(text: String, showSpinner: Boolean, isError: Boolean) {
+private fun BoxScope.ProcessingOverlay(confirm: ConfirmState) {
+    val strings = LocalAppStrings.current
     Surface(
         modifier = Modifier.align(Alignment.Center).padding(24.dp),
         shape = RoundedCornerShape(16.dp),
-        color = Color.Black.copy(alpha = 0.55f)
+        color = Color.Black.copy(alpha = 0.60f)
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 24.dp, vertical = 18.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (showSpinner) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(30.dp),
-                    strokeWidth = 3.dp,
-                    color = Color.White
+        Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp)) {
+            // 条码行：一直显示，反映最新状态
+            OverlayStatusRow(
+                spinning = confirm.barcodeDecoding,
+                isError = !confirm.barcodeDecoding && confirm.barcodeTracking == null,
+                label = when {
+                    confirm.barcodeDecoding -> strings.dock_barcodeScanning
+                    confirm.barcodeTracking != null -> strings.dock_barcodeOk
+                    else -> strings.dock_barcodeNotFound
+                }
+            )
+            // 上传行：上传中或失败时显示
+            if (confirm.uploading || confirm.uploadFailed) {
+                OverlayStatusRow(
+                    spinning = confirm.uploading,
+                    isError = confirm.uploadFailed,
+                    label = if (confirm.uploading) strings.dock_uploading else strings.dock_uploadFailed
                 )
-                Spacer(Modifier.width(14.dp))
             }
-            Text(
-                text,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = if (isError) MaterialTheme.colorScheme.error else Color.White
+            // 识别行：AI 分析中时显示
+            if (confirm.analyzing) {
+                OverlayStatusRow(spinning = true, isError = false, label = strings.dock_analyzing)
+            }
+        }
+    }
+}
+
+@Composable
+private fun OverlayStatusRow(spinning: Boolean, isError: Boolean, label: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(vertical = 4.dp)
+    ) {
+        if (spinning) {
+            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
+        } else {
+            Box(
+                modifier = Modifier
+                    .size(10.dp)
+                    .clip(CircleShape)
+                    .background(if (isError) Color(0xFFFF5252) else Color(0xFF66BB6A))
             )
         }
+        Spacer(Modifier.width(12.dp))
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = if (isError) Color(0xFFFF5252) else Color.White
+        )
     }
 }
 
@@ -512,23 +555,72 @@ private fun CameraCapture(
             modifier = Modifier.fillMaxWidth().height(previewHeight)
         )
         Spacer(Modifier.height(12.dp))
+        // 设备端稳后快门变主色（就绪），晃动时为灰色——提示用户拿稳再拍，减少糊片。
+        val steady = rememberCameraSteady()
         Box(modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp), contentAlignment = Alignment.Center) {
-            ShutterButton(onClick = { capturePhoto(context, controller, cameraExecutor, onPhotoCaptured) })
+            ShutterButton(
+                ready = steady,
+                onClick = { capturePhoto(context, controller, cameraExecutor, onPhotoCaptured) }
+            )
         }
     }
 }
 
-/** 相机快门样式的大圆点：外圈描边 + 内部实心圆。 */
+/**
+ * 用陀螺仪判断设备是否端稳：角速度低于阈值并持续约 250ms 视为稳定。
+ * 无陀螺仪的设备直接视为稳定（不拦路）。
+ */
 @Composable
-private fun ShutterButton(onClick: () -> Unit) {
+private fun rememberCameraSteady(): Boolean {
+    val context = LocalContext.current
+    var steady by remember { mutableStateOf(false) }
+    DisposableEffect(Unit) {
+        val sm = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        val gyro = sm.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
+        if (gyro == null) {
+            steady = true
+            onDispose {}
+        } else {
+            var steadySinceNanos = 0L
+            val listener = object : SensorEventListener {
+                override fun onSensorChanged(e: SensorEvent) {
+                    val mag = sqrt(e.values[0] * e.values[0] + e.values[1] * e.values[1] + e.values[2] * e.values[2])
+                    if (mag < STEADY_THRESHOLD) {
+                        if (steadySinceNanos == 0L) steadySinceNanos = e.timestamp
+                        if (!steady && e.timestamp - steadySinceNanos > STEADY_HOLD_NANOS) steady = true
+                    } else {
+                        steadySinceNanos = 0L
+                        if (steady) steady = false
+                    }
+                }
+                override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+            }
+            sm.registerListener(listener, gyro, SensorManager.SENSOR_DELAY_UI)
+            onDispose { sm.unregisterListener(listener) }
+        }
+    }
+    return steady
+}
+
+private const val STEADY_THRESHOLD = 0.12f          // rad/s，手持端稳的角速度上限
+private const val STEADY_HOLD_NANOS = 250_000_000L  // 持续稳定 250ms 才算就绪
+
+/** 相机快门大圆点：就绪（端稳）时主色，晃动时灰色。 */
+@Composable
+private fun ShutterButton(ready: Boolean, onClick: () -> Unit) {
+    val color by animateColorAsState(
+        targetValue = if (ready) MaterialTheme.colorScheme.primary
+        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+        label = "shutterColor"
+    )
     Box(
         modifier = Modifier
             .size(72.dp)
             .clip(CircleShape)
-            .border(width = 4.dp, color = MaterialTheme.colorScheme.primary, shape = CircleShape)
+            .border(width = 4.dp, color = color, shape = CircleShape)
             .padding(6.dp)
             .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.primary)
+            .background(color)
             .clickable(onClick = onClick)
     )
 }

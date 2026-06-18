@@ -24,6 +24,7 @@ import javax.inject.Inject
 class DockReceivingViewModel @Inject constructor(
     private val repo: ReceivingRepository,
     private val encoder: ImageEncoder,
+    private val barcodeDecoder: BarcodeDecoder,
     private val prefs: UserPreferences,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
@@ -83,17 +84,26 @@ class DockReceivingViewModel @Inject constructor(
         _uiState.value.confirm?.photoFile?.delete()
         _uiState.update {
             val prev = it.confirm ?: ConfirmState()
+            // 新照片：清掉上一张的自动识别结果（条码/AI），保留用户手输的运单号。
+            val keepTyped = if (prev.trackingAutoFilled) "" else prev.trackingNumber
             it.copy(
                 confirm = prev.copy(
                     photoFile = file,
                     uploading = true,
                     analyzing = true,
                     photoPath = null,
-                    uploadFailed = false
+                    uploadFailed = false,
+                    barcodeDecoding = true,
+                    barcodeTracking = null,
+                    trackingFromBarcode = false,
+                    trackingNumber = keepTyped,
+                    trackingAutoFilled = false
                 ),
                 recentlySaved = false
             )
         }
+        // 条码解码走原始全分辨率照片（最准）；上传/AI 走压缩图。三路并行。
+        viewModelScope.launch { runBarcode(file) }
         viewModelScope.launch {
             val img = try {
                 encoder.compress(file)
@@ -107,6 +117,29 @@ class DockReceivingViewModel @Inject constructor(
             }
             launch { runUpload(img.bytes, file.name) }
             launch { runAnalyze(img.base64) }
+        }
+    }
+
+    /** 本地解出运单号条码，暂存到草稿；若 AI 已返回则立即覆盖填入（条码权威）。 */
+    private suspend fun runBarcode(file: File) {
+        val tracking = barcodeDecoder.decodeTracking(file)
+        _uiState.update { state ->
+            val c = state.confirm ?: return@update state
+            if (tracking.isNullOrBlank()) {
+                // 未找到条码：仅清解码中标志，barcodeTracking 保持 null（overlay 显示"未找到"）。
+                state.copy(confirm = c.copy(barcodeDecoding = false))
+            } else {
+                val applyNow = !c.analyzing  // AI 已结束 → 条码晚到，直接覆盖
+                state.copy(
+                    confirm = c.copy(
+                        barcodeDecoding = false,
+                        barcodeTracking = tracking,
+                        trackingNumber = if (applyNow) tracking else c.trackingNumber,
+                        trackingAutoFilled = if (applyNow) true else c.trackingAutoFilled,
+                        trackingFromBarcode = if (applyNow) true else c.trackingFromBarcode
+                    )
+                )
+            }
         }
     }
 
@@ -130,26 +163,39 @@ class DockReceivingViewModel @Inject constructor(
                 is NetworkResult.Loading -> {}
                 is NetworkResult.Success -> _uiState.update { state ->
                     val c = state.confirm ?: return@update state
-                    // 校验 AI 返回的运单号；识别失败/返回乱码（N/A、unreadable、提示语等）时视为空，
-                    // 不写入字段，避免 Confirm 被错误启用。
-                    val tracking = sanitizeTracking(result.data.trackingNumber)
+                    // 优先级：条码 > AI 识别 > 已有字段（用户手输）。条码权威。
+                    // AI 运单号校验失败/乱码（N/A、unreadable、提示语等）视为空。
+                    val aiTracking = sanitizeTracking(result.data.trackingNumber)
                     val carrier = normalizeCarrier(result.data.carrier)
-                    val mergedTracking = if (tracking.isNotBlank()) tracking else c.trackingNumber
+                    val fromBarcode = c.barcodeTracking != null
+                    val merged = c.barcodeTracking ?: aiTracking.ifBlank { c.trackingNumber }
                     state.copy(
                         confirm = c.copy(
                             analyzing = false,
-                            trackingNumber = mergedTracking,
+                            trackingNumber = merged,
                             carrier = if (carrier.isNotBlank()) carrier else c.carrier,
-                            trackingAutoFilled = tracking.isNotBlank(),
+                            trackingAutoFilled = fromBarcode || aiTracking.isNotBlank(),
                             carrierAutoFilled = carrier.isNotBlank(),
+                            trackingFromBarcode = fromBarcode,
                             rawJson = result.data.raw
                         ),
-                        // 识别完成但仍无运单号（AI 看不清/返回 unreadable，且用户也没手输）→ 明确提示重拍或手输。
-                        message = if (mergedTracking.isBlank()) DockMessage.TrackingNotRecognized else state.message
+                        // 仍无运单号（条码没解出、AI 也看不清，且没手输）→ 提示重拍或手输。
+                        message = if (merged.isBlank()) DockMessage.TrackingNotRecognized else state.message
                     )
                 }
-                is NetworkResult.Error -> _uiState.update {
-                    it.copy(confirm = it.confirm?.copy(analyzing = false), message = DockMessage.Text(result.message))
+                is NetworkResult.Error -> _uiState.update { state ->
+                    val c = state.confirm ?: return@update state
+                    if (c.barcodeTracking != null) {
+                        // AI 失败但条码成功 → 用条码兜底填入，不报错（照片没白拍）。
+                        state.copy(confirm = c.copy(
+                            analyzing = false,
+                            trackingNumber = c.barcodeTracking,
+                            trackingAutoFilled = true,
+                            trackingFromBarcode = true
+                        ))
+                    } else {
+                        state.copy(confirm = c.copy(analyzing = false), message = DockMessage.Text(result.message))
+                    }
                 }
             }
         }
@@ -182,7 +228,7 @@ class DockReceivingViewModel @Inject constructor(
             carrier = c.carrier.ifBlank { null },
             condition = c.condition.ifBlank { null },
             photoPath = c.photoPath,        // 可为 null（纯手输，无照片）
-            source = "AI",
+            source = if (c.trackingFromBarcode) "Barcode" else "AI",
             rawJson = c.rawJson,
             needsReview = tracking.isBlank()
         )

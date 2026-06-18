@@ -93,6 +93,9 @@ dependencies {
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.androidx.camera.view)
 
+    // Bundled ML Kit barcode model — offline, no Google Play Services (Zebra-compatible).
+    implementation(libs.mlkit.barcode.scanning)
+
     debugImplementation(libs.androidx.ui.tooling)
 
     testImplementation(libs.junit)
