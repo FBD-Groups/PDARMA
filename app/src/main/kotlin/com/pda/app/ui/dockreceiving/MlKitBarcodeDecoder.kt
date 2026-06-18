@@ -3,9 +3,7 @@ package com.pda.app.ui.dockreceiving
 import android.content.Context
 import android.net.Uri
 import android.util.Log
-import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
-import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -29,20 +27,9 @@ class MlKitBarcodeDecoder @Inject constructor(
         const val TAG = "PDA/MlKitBarcodeDecoder"
     }
 
-    private val scanner by lazy {
-        BarcodeScanning.getClient(
-            BarcodeScannerOptions.Builder()
-                .setBarcodeFormats(
-                    Barcode.FORMAT_CODE_128,
-                    Barcode.FORMAT_CODE_39,
-                    Barcode.FORMAT_CODE_93,
-                    Barcode.FORMAT_ITF,
-                    Barcode.FORMAT_PDF417,
-                    Barcode.FORMAT_DATA_MATRIX
-                )
-                .build()
-        )
-    }
+    // 不限制格式：标签上可能同时有 Code 128、QR Code、Data Matrix 等多种条码，
+    // 全扫后由 pickTrackingBarcode 挑出运单号。静态图片解码，性能无影响。
+    private val scanner by lazy { BarcodeScanning.getClient() }
 
     override suspend fun decodeTracking(file: File): String? = withContext(Dispatchers.IO) {
         try {
