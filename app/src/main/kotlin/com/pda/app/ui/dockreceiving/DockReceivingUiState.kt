@@ -49,7 +49,7 @@ data class ConfirmState(
      * 没拍照（纯手输）则直接可存。
      */
     val canSave: Boolean
-        get() = trackingNumber.isNotBlank() && !uploading && !saving &&
+        get() = trackingNumber.isNotBlank() && !uploading && !analyzing && !saving &&
             (photoFile == null || photoPath != null)
 }
 
