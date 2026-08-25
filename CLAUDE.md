@@ -25,9 +25,10 @@ JVM target 17, application id `com.pda.app`.
 
 - Backend base URL is injected via `BuildConfig.RMA_BASE_URL` per build type in
   `app/build.gradle.kts`:
-  - **debug** → `http://10.0.2.2/` (emulator → host `localhost`; change to the device's
-    reachable host IP when running on a physical PDA).
-  - **release** → `http://FBDDEV002/rma-api/` (minified, ProGuard enabled).
+  - **debug** → `https://fbd.shipswithus.com/fbd-rma-api/` (production; change to
+    `http://10.0.2.2/` for emulator→host `localhost`, or the device's reachable host IP
+    when running on a physical PDA against a local backend).
+  - **release** → `https://fbd.shipswithus.com/fbd-rma-api/` (minified, ProGuard enabled).
 
 ## Core tech stack
 

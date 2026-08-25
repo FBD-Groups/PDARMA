@@ -21,15 +21,13 @@ android {
 
     buildTypes {
         debug {
-            // 接口路径已自带 api/ 前缀，故 base URL 只到主机根（不带 /api），
-            // 实际请求即 https://.../api/...。ngrok 隧道指向后端。
             // 本地直连改回 "http://10.0.2.2/"（模拟器→宿主机 localhost）。
-            buildConfigField("String", "RMA_BASE_URL", "\"https://underwire-numeral-operative.ngrok-free.dev/\"")
+            buildConfigField("String", "RMA_BASE_URL", "\"https://fbd.shipswithus.com/fbd-rma-api/\"")
         }
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            buildConfigField("String", "RMA_BASE_URL", "\"http://FBDDEV002/rma-api/\"")
+            buildConfigField("String", "RMA_BASE_URL", "\"https://fbd.shipswithus.com/fbd-rma-api/\"")
         }
     }
 

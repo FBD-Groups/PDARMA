@@ -82,8 +82,8 @@ cd PDARMA
 
 | 构建类型 | 默认地址 | 说明 |
 |----------|----------|------|
-| **debug** | `http://10.0.2.2/` | 模拟器访问宿主机 `localhost` |
-| **release** | `http://FBDDEV002/rma-api/` | 生产 IIS 子应用路径 |
+| **debug** | `https://fbd.shipswithus.com/fbd-rma-api/` | 生产环境地址 |
+| **release** | `https://fbd.shipswithus.com/fbd-rma-api/` | 生产环境地址 |
 
 **真机调试**：将 debug 的 URL 改为服务器局域网 IP，例如：
 
