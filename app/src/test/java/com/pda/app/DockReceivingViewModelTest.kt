@@ -443,6 +443,30 @@ class DockReceivingViewModelTest {
     }
 
     @Test
+    fun `auto-saves with tracking without waiting for AI customer`() = runTest {
+        val repo = FakeReceivingRepository().apply {
+            createBatchFlow = { flowOf(NetworkResult.Success(BatchInfo(42, "B-001"))) }
+            uploadFlow = { flowOf(NetworkResult.Success("/p/abc.jpg")) }
+            // AI 一直 Loading：有条码运单号 + 照片上传完成就应入库，不必等 customer。
+            analyzeFlow = { flowOf(NetworkResult.Loading) }
+            getItemsFlow = {
+                flowOf(NetworkResult.Success(listOf(
+                    ReceivingItemUi(1, "1Z999AA10123456784", "", false)
+                )))
+            }
+        }
+        val vm = vm(repo, barcode = "1Z999AA10123456784")
+        vm.startBatch(); advanceUntilIdle()
+        vm.onPhotoCaptured(File("capture.jpg")); advanceUntilIdle()
+
+        assertEquals(1, repo.createItemCallCount)
+        assertEquals("1Z999AA10123456784", repo.lastCreateItemReq!!.trackingNumber)
+        assertNull(repo.lastCreateItemReq!!.customerName)
+        assertEquals(listOf("/p/abc.jpg"), repo.lastCreateItemReq!!.photoPaths)
+        assertEquals("Barcode", repo.lastCreateItemReq!!.source)
+    }
+
+    @Test
     fun `duplicate tracking shows pending dialog and confirms save`() = runTest {
         val repo = FakeReceivingRepository().apply {
             createBatchFlow = { flowOf(NetworkResult.Success(BatchInfo(42, "B-001"))) }

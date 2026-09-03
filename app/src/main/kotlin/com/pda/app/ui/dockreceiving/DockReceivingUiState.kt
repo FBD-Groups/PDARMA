@@ -53,11 +53,11 @@ data class ConfirmState(
     val pendingDuplicateTracking: String? = null
 ) {
     /**
-     * 可保存：有运单号、未在上传/保存中；若拍了照则必须等上传完成（拿到 photoPath），
-     * 没拍照（纯手输）则直接可存。
+     * 可保存：有运单号即可（客户名可选）；若拍了照须等上传拿到 photoPath。
+     * 不必等 AI 分析结束——条码已给出运单号时即可入库，图片一并保存。
      */
     val canSave: Boolean
-        get() = trackingNumber.isNotBlank() && !uploading && !analyzing && !saving &&
+        get() = trackingNumber.isNotBlank() && !uploading && !saving &&
             !barcodeDecoding && pendingDuplicateTracking == null &&
             (photoFile == null || photoPath != null)
 

@@ -156,7 +156,7 @@ class DockReceivingViewModel @Inject constructor(
         }
     }
 
-    /** 本地解出运单号条码，暂存到草稿；若 AI 已返回则立即覆盖填入（条码权威）。 */
+    /** 本地解出运单号条码：立刻写入 Tracking 栏（不等 AI）；AI 返回后仍以条码为准合并。 */
     private suspend fun runBarcode(file: File) {
         val tracking = barcodeDecoder.decodeTracking(file)
         _uiState.update { state ->
@@ -164,14 +164,13 @@ class DockReceivingViewModel @Inject constructor(
             if (tracking.isNullOrBlank()) {
                 state.copy(confirm = c.copy(barcodeDecoding = false))
             } else {
-                val applyNow = !c.analyzing
                 state.copy(
                     confirm = c.copy(
                         barcodeDecoding = false,
                         barcodeTracking = tracking,
-                        trackingNumber = if (applyNow) tracking else c.trackingNumber,
-                        trackingAutoFilled = if (applyNow) true else c.trackingAutoFilled,
-                        trackingFromBarcode = if (applyNow) true else c.trackingFromBarcode
+                        trackingNumber = tracking,
+                        trackingAutoFilled = true,
+                        trackingFromBarcode = true
                     )
                 )
             }
@@ -345,7 +344,15 @@ class DockReceivingViewModel @Inject constructor(
                         if (result.data) {
                             soundPlayer.playBeep()
                             _uiState.update {
-                                it.copy(confirm = it.confirm?.copy(pendingDuplicateTracking = tracking))
+                                val cur = it.confirm
+                                it.copy(
+                                    confirm = cur?.copy(
+                                        // 弹窗时确保顶栏已写入运单号（避免只在 chip 可见）。
+                                        trackingNumber = tracking.ifBlank { cur.trackingNumber },
+                                        trackingAutoFilled = true,
+                                        pendingDuplicateTracking = tracking
+                                    )
+                                )
                             }
                         } else {
                             performSave()

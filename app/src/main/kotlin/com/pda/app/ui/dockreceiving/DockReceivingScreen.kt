@@ -29,6 +29,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -74,15 +75,33 @@ fun DockReceivingScreen(
 
     LaunchedEffect(uiState.message) {
         uiState.message?.let { msg ->
-            val text = when (msg) {
-                is DockMessage.Text -> msg.value
-                DockMessage.SelectWarehouseFirst -> strings.dock_selectWarehouseFirst
-                DockMessage.PhotoProcessingFailed -> strings.dock_photoProcessingFailed
-                DockMessage.TrackingNotRecognized -> strings.dock_trackingNotRecognized
-                is DockMessage.BatchClosed -> strings.dock_batchClosed(msg.number)
+            when (msg) {
+                is DockMessage.BatchClosed -> {
+                    // 关批成功后离开拍照页（顶栏返回 / 系统返回 / Close 共用）。
+                    viewModel.messageShown()
+                    onBack()
+                }
+                else -> {
+                    val text = when (msg) {
+                        is DockMessage.Text -> msg.value
+                        DockMessage.SelectWarehouseFirst -> strings.dock_selectWarehouseFirst
+                        DockMessage.PhotoProcessingFailed -> strings.dock_photoProcessingFailed
+                        DockMessage.TrackingNotRecognized -> strings.dock_trackingNotRecognized
+                        is DockMessage.BatchClosed -> strings.dock_batchClosed(msg.number) // unreachable
+                    }
+                    snackbarHostState.showSnackbar(text)
+                    viewModel.messageShown()
+                }
             }
-            snackbarHostState.showSnackbar(text)
-            viewModel.messageShown()
+        }
+    }
+
+    fun requestExit() {
+        if (uiState.isBusy) return
+        if (uiState.phase == Phase.Recording) {
+            viewModel.confirmCloseBatch()
+        } else {
+            onBack()
         }
     }
 
@@ -94,7 +113,7 @@ fun DockReceivingScreen(
                     Phase.Idle -> strings.dock_title
                     else -> uiState.batchNumber?.let { strings.dock_batchTitle(it) } ?: strings.dock_title
                 },
-                onBack = onBack,
+                onBack = { requestExit() },
                 trailing = if (uiState.phase == Phase.Recording) {
                     {
                         Text(
@@ -123,10 +142,8 @@ fun DockReceivingScreen(
             }
         }
     ) { padding ->
-        // 录货中按返回键直接关闭批次（与 Close Batch 按钮行为一致）。
-        if (uiState.phase == Phase.Recording) {
-            BackHandler(enabled = !uiState.isBusy) { viewModel.confirmCloseBatch() }
-        }
+        // 录货中系统返回 = 关批次后离开（与顶栏返回一致）。
+        BackHandler(enabled = !uiState.isBusy) { requestExit() }
 
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             when (uiState.phase) {
@@ -735,30 +752,52 @@ private fun ConfirmFields(
     onCustomerNameChange: (String) -> Unit
 ) {
     val strings = LocalAppStrings.current
-    // 矮栏约 36dp（默认 OutlinedTextField ~56dp 的一半多一点）；用 placeholder 避免浮动 label 撑高。
-    val fieldHeight = 36.dp
+    // 矮栏用 BasicTextField：OutlinedTextField 固定 36dp 会把正文裁没，看起来像没填入。
     Column(modifier = Modifier.fillMaxWidth()) {
-        OutlinedTextField(
+        CompactField(
             value = confirm.trackingNumber,
             onValueChange = onTrackingChange,
-            placeholder = { Text(strings.dock_trackingLabel, style = MaterialTheme.typography.bodySmall) },
-            singleLine = true,
-            textStyle = MaterialTheme.typography.bodySmall,
-            modifier = Modifier
-                .fillMaxWidth()
-                .defaultMinSize(minHeight = fieldHeight)
-                .height(fieldHeight),
+            placeholder = strings.dock_trackingLabel
         )
-        OutlinedTextField(
+        CompactField(
             value = confirm.customerName,
             onValueChange = onCustomerNameChange,
-            placeholder = { Text(strings.dock_customerName, style = MaterialTheme.typography.bodySmall) },
-            singleLine = true,
-            textStyle = MaterialTheme.typography.bodySmall,
-            modifier = Modifier
-                .fillMaxWidth()
-                .defaultMinSize(minHeight = fieldHeight)
-                .height(fieldHeight),
+            placeholder = strings.dock_customerName
         )
     }
+}
+
+@Composable
+private fun CompactField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    modifier: Modifier = Modifier
+) {
+    val border = MaterialTheme.colorScheme.outline
+    BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        singleLine = true,
+        textStyle = MaterialTheme.typography.bodySmall.copy(
+            color = MaterialTheme.colorScheme.onSurface
+        ),
+        modifier = modifier
+            .fillMaxWidth()
+            .height(36.dp)
+            .border(1.dp, border, RoundedCornerShape(4.dp))
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        decorationBox = { inner ->
+            Box(contentAlignment = Alignment.CenterStart) {
+                if (value.isEmpty()) {
+                    Text(
+                        placeholder,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    )
+                }
+                inner()
+            }
+        }
+    )
 }
