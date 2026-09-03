@@ -119,6 +119,10 @@ private fun vm(
         FakeCustomerRepository(customers),
         FakeImageEncoder(),
         FakeBarcodeDecoder(barcode),
+        object : com.pda.app.ui.dockreceiving.DockSoundPlayer {
+            override fun playSuccess() {}
+            override fun playBeep() {}
+        },
         FakeUserPreferences(),
         SavedStateHandle(mapOf("warehouseId" to warehouseId))
     )
@@ -196,7 +200,9 @@ class DockReceivingViewModelTest {
         assertEquals("AI", req.source)
         assertEquals(false, req.needsReview)
         assertTrue(vm.uiState.value.recentlySaved)
-        assertEquals("", vm.uiState.value.confirm!!.trackingNumber)
+        assertEquals("1Z999AA10123456784", vm.uiState.value.confirm!!.trackingNumber)
+        assertEquals("Eco", vm.uiState.value.confirm!!.customerName)
+        assertNull(vm.uiState.value.confirm!!.photoFile)
         assertEquals(1, vm.uiState.value.itemCount)
     }
 

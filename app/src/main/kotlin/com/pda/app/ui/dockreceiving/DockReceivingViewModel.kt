@@ -28,6 +28,7 @@ class DockReceivingViewModel @Inject constructor(
     private val customerRepo: CustomerRepository,
     private val encoder: ImageEncoder,
     private val barcodeDecoder: BarcodeDecoder,
+    private val soundPlayer: DockSoundPlayer,
     private val prefs: UserPreferences,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
@@ -129,6 +130,7 @@ class DockReceivingViewModel @Inject constructor(
                 runUpload(uploadBytes, file.name)
             } catch (e: Exception) {
                 Log.e(TAG, "prepareForUpload: ${e.message}", e)
+                soundPlayer.playBeep()
                 _uiState.update {
                     it.copy(
                         confirm = it.confirm?.copy(uploading = false, uploadFailed = true),
@@ -143,6 +145,7 @@ class DockReceivingViewModel @Inject constructor(
                 runAnalyze(img.base64)
             } catch (e: Exception) {
                 Log.e(TAG, "compress: ${e.message}", e)
+                soundPlayer.playBeep()
                 _uiState.update {
                     it.copy(
                         confirm = it.confirm?.copy(analyzing = false),
@@ -186,8 +189,14 @@ class DockReceivingViewModel @Inject constructor(
                     }
                     maybeAutoSubmit()
                 }
-                is NetworkResult.Error -> _uiState.update {
-                    it.copy(confirm = it.confirm?.copy(uploading = false, uploadFailed = true), message = DockMessage.Text(result.message))
+                is NetworkResult.Error -> {
+                    soundPlayer.playBeep()
+                    _uiState.update {
+                        it.copy(
+                            confirm = it.confirm?.copy(uploading = false, uploadFailed = true),
+                            message = DockMessage.Text(result.message)
+                        )
+                    }
                 }
             }
         }
@@ -198,6 +207,7 @@ class DockReceivingViewModel @Inject constructor(
             when (result) {
                 is NetworkResult.Loading -> {}
                 is NetworkResult.Success -> {
+                    var noTracking = false
                     _uiState.update { state ->
                         val c = state.confirm ?: return@update state
                         val carrier = normalizeCarrier(result.data.carrier)
@@ -217,6 +227,7 @@ class DockReceivingViewModel @Inject constructor(
                             wasFedExLongBarcode(result.data.trackingNumber) -> "FedEx"
                             else -> c.carrier
                         }
+                        noTracking = merged.isBlank()
                         state.copy(
                             confirm = c.copy(
                                 analyzing = false,
@@ -236,12 +247,14 @@ class DockReceivingViewModel @Inject constructor(
                                 trackingFromBarcode = fromBarcode,
                                 rawJson = result.data.raw
                             ),
-                            message = if (merged.isBlank()) DockMessage.TrackingNotRecognized else state.message
+                            message = if (noTracking) DockMessage.TrackingNotRecognized else state.message
                         )
                     }
+                    if (noTracking) soundPlayer.playBeep()
                     maybeAutoSubmit()
                 }
                 is NetworkResult.Error -> {
+                    var playedBeep = false
                     _uiState.update { state ->
                         val c = state.confirm ?: return@update state
                         if (c.barcodeTracking != null) {
@@ -252,9 +265,11 @@ class DockReceivingViewModel @Inject constructor(
                                 trackingFromBarcode = true
                             ))
                         } else {
+                            playedBeep = true
                             state.copy(confirm = c.copy(analyzing = false), message = DockMessage.Text(result.message))
                         }
                     }
+                    if (playedBeep) soundPlayer.playBeep()
                     maybeAutoSubmit()
                 }
             }
@@ -328,6 +343,7 @@ class DockReceivingViewModel @Inject constructor(
                     is NetworkResult.Loading -> {}
                     is NetworkResult.Success -> {
                         if (result.data) {
+                            soundPlayer.playBeep()
                             _uiState.update {
                                 it.copy(confirm = it.confirm?.copy(pendingDuplicateTracking = tracking))
                             }
@@ -366,12 +382,33 @@ class DockReceivingViewModel @Inject constructor(
                 when (result) {
                     is NetworkResult.Loading -> {}
                     is NetworkResult.Success -> {
+                        soundPlayer.playSuccess()
                         c.photoFile?.delete()
-                        _uiState.update { it.copy(confirm = ConfirmState(), recentlySaved = true) }
+                        // 对齐 web：入库后保留 Tracking / Customer 展示，下次拍照再清空替换。
+                        _uiState.update {
+                            it.copy(
+                                confirm = ConfirmState(
+                                    trackingNumber = tracking.ifBlank { c.trackingNumber },
+                                    carrier = c.carrier,
+                                    customerName = c.customerName,
+                                    customerId = c.customerId,
+                                    condition = c.condition,
+                                    trackingAutoFilled = c.trackingAutoFilled,
+                                    carrierAutoFilled = c.carrierAutoFilled,
+                                    customerAutoFilled = c.customerAutoFilled,
+                                    trackingFromBarcode = c.trackingFromBarcode,
+                                    autoSubmitConsumed = true
+                                ),
+                                recentlySaved = true
+                            )
+                        }
                         refreshItems(bid)
                     }
-                    is NetworkResult.Error -> _uiState.update {
-                        it.copy(confirm = it.confirm?.copy(saving = false), message = DockMessage.Text(result.message))
+                    is NetworkResult.Error -> {
+                        soundPlayer.playBeep()
+                        _uiState.update {
+                            it.copy(confirm = it.confirm?.copy(saving = false), message = DockMessage.Text(result.message))
+                        }
                     }
                 }
             }
@@ -391,6 +428,7 @@ class DockReceivingViewModel @Inject constructor(
                     is NetworkResult.Loading -> {}
                     is NetworkResult.Success -> {
                         if (result.data) {
+                            soundPlayer.playBeep()
                             _uiState.update {
                                 it.copy(
                                     confirm = ConfirmState(
@@ -426,10 +464,14 @@ class DockReceivingViewModel @Inject constructor(
                 when (result) {
                     is NetworkResult.Loading -> {}
                     is NetworkResult.Success -> {
+                        soundPlayer.playSuccess()
                         _uiState.update { it.copy(recentlySaved = true, confirm = null) }
                         refreshItems(bid)
                     }
-                    is NetworkResult.Error -> _uiState.update { it.copy(message = DockMessage.Text(result.message)) }
+                    is NetworkResult.Error -> {
+                        soundPlayer.playBeep()
+                        _uiState.update { it.copy(message = DockMessage.Text(result.message)) }
+                    }
                 }
             }
         }
