@@ -38,6 +38,7 @@ object ChineseStrings : AppStrings {
     override val dock_scanHint = "扫描或输入运单号…"
     override val dock_trackingLabel = "运单号"
     override val dock_carrier = "承运商"
+    override val dock_customerName = "客户"
     override val dock_condition = "状态"
     override val dock_barcodeScanning = "读取条码…"
     override val dock_barcodeOk = "条码 OK"
@@ -58,6 +59,9 @@ object ChineseStrings : AppStrings {
     override val dock_photoProcessingFailed = "照片处理失败 — 请重拍"
     override val dock_trackingNotRecognized = "未能识别运单号 — 请重拍（拿稳、靠近）或手动输入"
     override fun dock_batchClosed(number: String) = "$number 已关闭"
+    override val dock_duplicateTitle = "运单号已存在"
+    override fun dock_duplicateBody(tracking: String) = "近 10 天内已录入过 $tracking。仍要加入吗？"
+    override val dock_duplicateConfirm = "仍要加入"
 
     override val batch_empty = "该批次暂无明细"
     override val batch_noTracking = "（无单号）"

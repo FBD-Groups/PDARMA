@@ -86,6 +86,7 @@ class DockReceivingViewModel @Inject constructor(
             val prev = it.confirm ?: ConfirmState()
             // 新照片：清掉上一张的自动识别结果（条码/AI），保留用户手输的运单号。
             val keepTyped = if (prev.trackingAutoFilled) "" else prev.trackingNumber
+            val keepCustomer = if (prev.customerAutoFilled) "" else prev.customerName
             it.copy(
                 confirm = prev.copy(
                     photoFile = file,
@@ -97,7 +98,14 @@ class DockReceivingViewModel @Inject constructor(
                     barcodeTracking = null,
                     trackingFromBarcode = false,
                     trackingNumber = keepTyped,
-                    trackingAutoFilled = false
+                    trackingAutoFilled = false,
+                    customerName = keepCustomer,
+                    customerAutoFilled = false,
+                    carrier = "",
+                    carrierAutoFilled = false,
+                    autoSubmitConsumed = false,
+                    pendingDuplicateTracking = null,
+                    rawJson = null
                 ),
                 recentlySaved = false
             )
@@ -126,10 +134,9 @@ class DockReceivingViewModel @Inject constructor(
         _uiState.update { state ->
             val c = state.confirm ?: return@update state
             if (tracking.isNullOrBlank()) {
-                // 未找到条码：仅清解码中标志，barcodeTracking 保持 null（overlay 显示"未找到"）。
                 state.copy(confirm = c.copy(barcodeDecoding = false))
             } else {
-                val applyNow = !c.analyzing  // AI 已结束 → 条码晚到，直接覆盖
+                val applyNow = !c.analyzing
                 state.copy(
                     confirm = c.copy(
                         barcodeDecoding = false,
@@ -141,14 +148,18 @@ class DockReceivingViewModel @Inject constructor(
                 )
             }
         }
+        maybeAutoSubmit()
     }
 
     private suspend fun runUpload(bytes: ByteArray, filename: String) {
         repo.uploadPhoto(bytes, filename).collect { result ->
             when (result) {
                 is NetworkResult.Loading -> {}
-                is NetworkResult.Success -> _uiState.update {
-                    it.copy(confirm = it.confirm?.copy(uploading = false, photoPath = result.data, uploadFailed = false))
+                is NetworkResult.Success -> {
+                    _uiState.update {
+                        it.copy(confirm = it.confirm?.copy(uploading = false, photoPath = result.data, uploadFailed = false))
+                    }
+                    maybeAutoSubmit()
                 }
                 is NetworkResult.Error -> _uiState.update {
                     it.copy(confirm = it.confirm?.copy(uploading = false, uploadFailed = true), message = DockMessage.Text(result.message))
@@ -161,73 +172,148 @@ class DockReceivingViewModel @Inject constructor(
         repo.analyzeShipping(base64).collect { result ->
             when (result) {
                 is NetworkResult.Loading -> {}
-                is NetworkResult.Success -> _uiState.update { state ->
-                    val c = state.confirm ?: return@update state
-                    // 优先级：条码 > AI 识别 > 已有字段（用户手输）。条码权威。
-                    // AI 运单号校验失败/乱码（N/A、unreadable、提示语等）视为空。
-                    val aiTracking = sanitizeTracking(result.data.trackingNumber)
-                    val carrier = normalizeCarrier(result.data.carrier)
-                    val fromBarcode = c.barcodeTracking != null
-                    val merged = c.barcodeTracking ?: aiTracking.ifBlank { c.trackingNumber }
-                    state.copy(
-                        confirm = c.copy(
-                            analyzing = false,
-                            trackingNumber = merged,
-                            carrier = if (carrier.isNotBlank()) carrier else c.carrier,
-                            trackingAutoFilled = fromBarcode || aiTracking.isNotBlank(),
-                            carrierAutoFilled = carrier.isNotBlank(),
-                            trackingFromBarcode = fromBarcode,
-                            rawJson = result.data.raw
-                        ),
-                        // 仍无运单号（条码没解出、AI 也看不清，且没手输）→ 提示重拍或手输。
-                        message = if (merged.isBlank()) DockMessage.TrackingNotRecognized else state.message
-                    )
-                }
-                is NetworkResult.Error -> _uiState.update { state ->
-                    val c = state.confirm ?: return@update state
-                    if (c.barcodeTracking != null) {
-                        // AI 失败但条码成功 → 用条码兜底填入，不报错（照片没白拍）。
-                        state.copy(confirm = c.copy(
-                            analyzing = false,
-                            trackingNumber = c.barcodeTracking,
-                            trackingAutoFilled = true,
-                            trackingFromBarcode = true
-                        ))
-                    } else {
-                        state.copy(confirm = c.copy(analyzing = false), message = DockMessage.Text(result.message))
+                is NetworkResult.Success -> {
+                    _uiState.update { state ->
+                        val c = state.confirm ?: return@update state
+                        val aiTracking = sanitizeTracking(result.data.trackingNumber)
+                        val carrier = normalizeCarrier(result.data.carrier)
+                        val customer = result.data.customerName?.trim().orEmpty()
+                        val fromBarcode = c.barcodeTracking != null
+                        val merged = c.barcodeTracking ?: aiTracking.ifBlank { c.trackingNumber }
+                        state.copy(
+                            confirm = c.copy(
+                                analyzing = false,
+                                trackingNumber = merged,
+                                carrier = if (carrier.isNotBlank()) carrier else c.carrier,
+                                customerName = when {
+                                    customer.isNotBlank() -> customer
+                                    else -> c.customerName
+                                },
+                                trackingAutoFilled = fromBarcode || aiTracking.isNotBlank(),
+                                carrierAutoFilled = carrier.isNotBlank(),
+                                customerAutoFilled = customer.isNotBlank(),
+                                trackingFromBarcode = fromBarcode,
+                                rawJson = result.data.raw
+                            ),
+                            message = if (merged.isBlank()) DockMessage.TrackingNotRecognized else state.message
+                        )
                     }
+                    maybeAutoSubmit()
+                }
+                is NetworkResult.Error -> {
+                    _uiState.update { state ->
+                        val c = state.confirm ?: return@update state
+                        if (c.barcodeTracking != null) {
+                            state.copy(confirm = c.copy(
+                                analyzing = false,
+                                trackingNumber = c.barcodeTracking,
+                                trackingAutoFilled = true,
+                                trackingFromBarcode = true
+                            ))
+                        } else {
+                            state.copy(confirm = c.copy(analyzing = false), message = DockMessage.Text(result.message))
+                        }
+                    }
+                    maybeAutoSubmit()
                 }
             }
         }
     }
 
     fun onTrackingChanged(v: String) =
-        _uiState.update { it.copy(confirm = it.confirm?.copy(trackingNumber = v, trackingAutoFilled = false)) }
+        _uiState.update {
+            it.copy(confirm = it.confirm?.copy(
+                trackingNumber = v,
+                trackingAutoFilled = false,
+                autoSubmitConsumed = true
+            ))
+        }
 
     fun onCarrierChanged(v: String) =
         _uiState.update { it.copy(confirm = it.confirm?.copy(carrier = v, carrierAutoFilled = false)) }
+
+    fun onCustomerNameChanged(v: String) =
+        _uiState.update { it.copy(confirm = it.confirm?.copy(customerName = v, customerAutoFilled = false)) }
 
     fun onConditionChanged(v: String) =
         _uiState.update { it.copy(confirm = it.confirm?.copy(condition = v)) }
 
     fun cancelConfirm() {
         _uiState.value.confirm?.photoFile?.delete()
-        // 清空回空草稿（Tracking # 框常驻），而非整段移除。
         _uiState.update { it.copy(confirm = ConfirmState()) }
     }
 
+    fun dismissDuplicateSave() {
+        _uiState.update { it.copy(confirm = it.confirm?.copy(pendingDuplicateTracking = null)) }
+    }
+
+    fun confirmDuplicateSave() {
+        _uiState.update { it.copy(confirm = it.confirm?.copy(pendingDuplicateTracking = null)) }
+        performSave()
+    }
+
+    /** 识别流水线结束后，若具备条件则自动查重并入库（每张照片最多一次）。 */
+    private fun maybeAutoSubmit() {
+        var shouldSubmit = false
+        _uiState.update { state ->
+            val c = state.confirm ?: return@update state
+            if (!c.readyForAutoSubmit) return@update state
+            shouldSubmit = true
+            state.copy(confirm = c.copy(autoSubmitConsumed = true))
+        }
+        if (shouldSubmit) beginSaveWithDuplicateCheck()
+    }
+
     fun saveItem() {
+        val c = _uiState.value.confirm ?: return
+        if (!c.canSave && c.trackingNumber.isBlank() && c.photoPath == null) return
+        _uiState.update { it.copy(confirm = it.confirm?.copy(autoSubmitConsumed = true)) }
+        beginSaveWithDuplicateCheck()
+    }
+
+    private fun beginSaveWithDuplicateCheck() {
+        val state = _uiState.value
+        val c = state.confirm ?: return
+        val tracking = c.trackingNumber.replace("\\s+".toRegex(), "")
+        if (tracking.isBlank() && c.photoPath == null) return
+        if (tracking.isBlank()) {
+            // 无运单号：跳过查重，直接存（needsReview）。
+            performSave()
+            return
+        }
+        viewModelScope.launch {
+            repo.isDuplicateTracking(tracking).collect { result ->
+                when (result) {
+                    is NetworkResult.Loading -> {}
+                    is NetworkResult.Success -> {
+                        if (result.data) {
+                            _uiState.update {
+                                it.copy(confirm = it.confirm?.copy(pendingDuplicateTracking = tracking))
+                            }
+                        } else {
+                            performSave()
+                        }
+                    }
+                    is NetworkResult.Error -> performSave() // 不应发生；repo 已吞异常
+                }
+            }
+        }
+    }
+
+    private fun performSave() {
         val state = _uiState.value
         val c = state.confirm ?: return
         val bid = state.batchId ?: return
         val tracking = c.trackingNumber.replace("\\s+".toRegex(), "")
-        if (tracking.isBlank() && c.photoPath == null) return  // 无运单号也无照片，无可保存内容
+        if (tracking.isBlank() && c.photoPath == null) return
+        val customer = c.customerName.trim()
         val req = CreateItemRequest(
             receivingBatchId = bid,
             trackingNumber = tracking.ifBlank { null },
             carrier = c.carrier.ifBlank { null },
+            customerName = customer.ifBlank { null },
             condition = c.condition.ifBlank { null },
-            photoPath = c.photoPath,        // 可为 null（纯手输，无照片）
+            photoPaths = c.photoPath?.let { listOf(it) },
             source = if (c.trackingFromBarcode) "Barcode" else "AI",
             rawJson = c.rawJson,
             needsReview = tracking.isBlank()
@@ -239,7 +325,6 @@ class DockReceivingViewModel @Inject constructor(
                     is NetworkResult.Loading -> {}
                     is NetworkResult.Success -> {
                         c.photoFile?.delete()
-                        // 重置为空草稿：Tracking # 框继续常驻，可录下一单。
                         _uiState.update { it.copy(confirm = ConfirmState(), recentlySaved = true) }
                         refreshItems(bid)
                     }
@@ -256,10 +341,38 @@ class DockReceivingViewModel @Inject constructor(
         val t = tracking.replace("\\s+".toRegex(), "")
         if (t.isBlank()) return
         val bid = _uiState.value.batchId ?: return
+        viewModelScope.launch {
+            repo.isDuplicateTracking(t).collect { result ->
+                when (result) {
+                    is NetworkResult.Loading -> {}
+                    is NetworkResult.Success -> {
+                        if (result.data) {
+                            // 扫码模式无确认草稿时，用临时 confirm 承载对话框；确认后走 performSave。
+                            _uiState.update {
+                                it.copy(
+                                    confirm = ConfirmState(
+                                        trackingNumber = t,
+                                        trackingFromBarcode = true,
+                                        pendingDuplicateTracking = t,
+                                        autoSubmitConsumed = true
+                                    )
+                                )
+                            }
+                        } else {
+                            createScanItem(bid, t)
+                        }
+                    }
+                    is NetworkResult.Error -> createScanItem(bid, t)
+                }
+            }
+        }
+    }
+
+    private fun createScanItem(bid: Int, tracking: String) {
         val req = CreateItemRequest(
             receivingBatchId = bid,
-            trackingNumber = t,
-            photoPath = null,
+            trackingNumber = tracking,
+            photoPaths = null,
             source = "Barcode",
             needsReview = false
         )
@@ -268,7 +381,7 @@ class DockReceivingViewModel @Inject constructor(
                 when (result) {
                     is NetworkResult.Loading -> {}
                     is NetworkResult.Success -> {
-                        _uiState.update { it.copy(recentlySaved = true) }
+                        _uiState.update { it.copy(recentlySaved = true, confirm = null) }
                         refreshItems(bid)
                     }
                     is NetworkResult.Error -> _uiState.update { it.copy(message = DockMessage.Text(result.message)) }

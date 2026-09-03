@@ -52,6 +52,7 @@ interface AppStrings {
     val dock_scanHint: String
     val dock_trackingLabel: String
     val dock_carrier: String
+    val dock_customerName: String
     val dock_condition: String
     val dock_barcodeScanning: String
     val dock_barcodeOk: String
@@ -69,6 +70,9 @@ interface AppStrings {
     val dock_photoProcessingFailed: String
     val dock_trackingNotRecognized: String
     fun dock_batchClosed(number: String): String
+    val dock_duplicateTitle: String
+    fun dock_duplicateBody(tracking: String): String
+    val dock_duplicateConfirm: String
 
     // ── Batch Detail ──────────────────────────────────────────────────────────
     val batch_empty: String

@@ -38,6 +38,7 @@ object EnglishStrings : AppStrings {
     override val dock_scanHint = "Scan or enter tracking #…"
     override val dock_trackingLabel = "Tracking #"
     override val dock_carrier = "Carrier"
+    override val dock_customerName = "Customer"
     override val dock_condition = "Condition"
     override val dock_barcodeScanning = "Barcode…"
     override val dock_barcodeOk = "Barcode OK"
@@ -58,6 +59,9 @@ object EnglishStrings : AppStrings {
     override val dock_photoProcessingFailed = "Photo processing failed — retake"
     override val dock_trackingNotRecognized = "Couldn't read the tracking number — retake (hold steady, get closer) or enter it manually"
     override fun dock_batchClosed(number: String) = "$number closed"
+    override val dock_duplicateTitle = "Tracking already exists"
+    override fun dock_duplicateBody(tracking: String) = "$tracking was received in the last 10 days. Add it anyway?"
+    override val dock_duplicateConfirm = "Add anyway"
 
     override val batch_empty = "No items in this batch"
     override val batch_noTracking = "(no tracking #)"

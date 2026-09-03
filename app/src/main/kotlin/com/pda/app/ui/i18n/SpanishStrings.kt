@@ -38,6 +38,7 @@ object SpanishStrings : AppStrings {
     override val dock_scanHint = "Escanear o ingresar # de rastreo…"
     override val dock_trackingLabel = "# de Rastreo"
     override val dock_carrier = "Transportista"
+    override val dock_customerName = "Cliente"
     override val dock_condition = "Condición"
     override val dock_barcodeScanning = "Código de barras…"
     override val dock_barcodeOk = "Código OK"
@@ -58,6 +59,9 @@ object SpanishStrings : AppStrings {
     override val dock_photoProcessingFailed = "Error al procesar la foto — reintentar"
     override val dock_trackingNotRecognized = "No se pudo leer el número de rastreo — repita la foto (firme, más cerca) o ingréselo manualmente"
     override fun dock_batchClosed(number: String) = "$number cerrado"
+    override val dock_duplicateTitle = "El rastreo ya existe"
+    override fun dock_duplicateBody(tracking: String) = "$tracking ya se recibió en los últimos 10 días. ¿Agregar de todos modos?"
+    override val dock_duplicateConfirm = "Agregar de todos modos"
 
     override val batch_empty = "No hay artículos en este lote"
     override val batch_noTracking = "(sin # de rastreo)"

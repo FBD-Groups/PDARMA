@@ -20,8 +20,10 @@ data class CreateItemRequest(
     val receivingBatchId: Int,
     val trackingNumber: String? = null,
     val carrier: String? = null,
+    val customerName: String? = null,
     val condition: String? = null,
-    val photoPath: String? = null,
+    /** 对齐网页 / 后端 PhotoPaths；单张时传 listOf(url)。 */
+    val photoPaths: List<String>? = null,
     val source: String = "AI",
     val rawJson: String? = null,
     val needsReview: Boolean? = null
@@ -41,7 +43,23 @@ data class ShippingAnalyzeResponse(
     val trackingNumber: String? = null,
     val carrier: String? = null,
     val service: String? = null,
+    val customerName: String? = null,
     val raw: String? = null
+)
+
+/** GET /api/receiving-items/search 分页结果（判重只用 total）。 */
+@Serializable
+data class ReceivingItemSearchPage(
+    val items: List<ReceivingItemRowDto> = emptyList(),
+    val total: Int = 0,
+    val page: Int = 1,
+    val size: Int = 20
+)
+
+@Serializable
+data class ReceivingItemRowDto(
+    val receivingItemId: Int? = null,
+    val trackingNumber: String? = null
 )
 
 @Serializable
@@ -55,6 +73,7 @@ data class ReceivingItemDto(
     val receivingItemId: Int,
     val trackingNo: String? = null,
     val carrier: String? = null,
+    val customerName: String? = null,
     val needsReview: Boolean? = null
 )
 
@@ -79,14 +98,16 @@ data class ShippingAnalysis(
     val trackingNumber: String?,
     val carrier: String?,
     val service: String?,
-    val raw: String?
+    val raw: String?,
+    val customerName: String? = null
 )
 
 data class ReceivingItemUi(
     val receivingItemId: Int,
     val trackingNo: String,
     val carrier: String,
-    val needsReview: Boolean
+    val needsReview: Boolean,
+    val customerName: String = ""
 )
 
 /** 一条已收货批次（Receive Report 用）。receivedAt = 后端 EndTime（关批时间）。 */

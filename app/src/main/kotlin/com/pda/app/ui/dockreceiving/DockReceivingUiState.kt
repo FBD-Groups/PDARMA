@@ -35,14 +35,20 @@ data class ConfirmState(
     val uploadFailed: Boolean = false,
     val trackingNumber: String = "",
     val carrier: String = "",
+    val customerName: String = "",
     val condition: String = "",
     val rawJson: String? = null,
     val trackingAutoFilled: Boolean = false,
     val carrierAutoFilled: Boolean = false,
+    val customerAutoFilled: Boolean = false,
     val saving: Boolean = false,
     val barcodeDecoding: Boolean = false,     // 条码解码进行中（拍照 → 解出/超时后清）
     val barcodeTracking: String? = null,     // 本地条码解出的运单号，暂存到 AI 返回后再合并
-    val trackingFromBarcode: Boolean = false // 最终运单号取自条码 → source=Barcode
+    val trackingFromBarcode: Boolean = false, // 最终运单号取自条码 → source=Barcode
+    /** 同一张照片只自动提交一次；手改运单号后也置 true，避免改字连保存。 */
+    val autoSubmitConsumed: Boolean = false,
+    /** 非空时弹重复运单确认框。 */
+    val pendingDuplicateTracking: String? = null
 ) {
     /**
      * 可保存：有运单号、未在上传/保存中；若拍了照则必须等上传完成（拿到 photoPath），
@@ -50,7 +56,12 @@ data class ConfirmState(
      */
     val canSave: Boolean
         get() = trackingNumber.isNotBlank() && !uploading && !analyzing && !saving &&
+            !barcodeDecoding && pendingDuplicateTracking == null &&
             (photoFile == null || photoPath != null)
+
+    /** 识别/上传流水线已结束后，具备自动提交条件。 */
+    val readyForAutoSubmit: Boolean
+        get() = !autoSubmitConsumed && canSave && !saving
 }
 
 data class DockReceivingUiState(

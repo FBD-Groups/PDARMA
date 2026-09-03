@@ -8,6 +8,7 @@ import com.pda.app.data.api.model.CreateItemRequest
 import com.pda.app.data.api.model.CreateItemResponse
 import com.pda.app.data.api.model.ReceivingBatchDto
 import com.pda.app.data.api.model.ReceivingItemDto
+import com.pda.app.data.api.model.ReceivingItemSearchPage
 import com.pda.app.data.api.model.ShippingAnalyzeResponse
 import com.pda.app.data.api.model.UploadPhotosResponse
 import okhttp3.MultipartBody
@@ -47,4 +48,13 @@ interface ReceivingApiService {
         @Query("scanUser") scanUser: String?,
         @Query("scanDateFrom") scanDateFrom: String?
     ): Response<List<ReceivingBatchDto>>
+
+    /** 近 N 天精确运单号搜索（判重）；只用 total。 */
+    @GET("api/receiving-items/search")
+    suspend fun searchItems(
+        @Query("trackingNumberExact") trackingNumberExact: String,
+        @Query("receivedDateFrom") receivedDateFrom: String,
+        @Query("page") page: Int = 1,
+        @Query("pageSize") pageSize: Int = 1
+    ): Response<ReceivingItemSearchPage>
 }

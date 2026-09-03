@@ -10,6 +10,7 @@ import com.pda.app.data.api.model.CreateItemRequest
 import com.pda.app.data.api.model.CreateItemResponse
 import com.pda.app.data.api.model.ReceivingBatchDto
 import com.pda.app.data.api.model.ReceivingItemDto
+import com.pda.app.data.api.model.ReceivingItemSearchPage
 import com.pda.app.data.api.model.ShippingAnalyzeResponse
 import com.pda.app.data.api.model.UploadPhotosResponse
 import com.pda.app.data.repository.ReceivingRepository
@@ -19,6 +20,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import retrofit2.Response
@@ -30,7 +32,9 @@ private class FakeReceivingApiService(
     var createItemResp: Response<CreateItemResponse>? = null,
     var getItemsResp: Response<List<ReceivingItemDto>>? = null,
     var closeResp: Response<CloseBatchResponse>? = null,
-    var getBatchesResp: Response<List<ReceivingBatchDto>>? = null
+    var getBatchesResp: Response<List<ReceivingBatchDto>>? = null,
+    var searchItemsResp: Response<ReceivingItemSearchPage>? = null,
+    var searchItemsThrows: Exception? = null
 ) : ReceivingApiService {
     override suspend fun createBatch(req: CreateBatchRequest) = createBatchResp!!
     override suspend fun uploadPhotos(file: MultipartBody.Part) = uploadResp!!
@@ -39,6 +43,15 @@ private class FakeReceivingApiService(
     override suspend fun getItems(batchId: Int) = getItemsResp!!
     override suspend fun closeBatch(id: Int) = closeResp!!
     override suspend fun getBatches(warehouseId: Int?, scanUser: String?, scanDateFrom: String?) = getBatchesResp!!
+    override suspend fun searchItems(
+        trackingNumberExact: String,
+        receivedDateFrom: String,
+        page: Int,
+        pageSize: Int
+    ): Response<ReceivingItemSearchPage> {
+        searchItemsThrows?.let { throw it }
+        return searchItemsResp!!
+    }
 }
 
 private fun jsonBody(s: String) = s.toResponseBody("application/json".toMediaType())
@@ -104,10 +117,16 @@ class ReceivingRepositoryTest {
     }
 
     @Test
-    fun `analyzeShipping maps fields`() = runTest {
+    fun `analyzeShipping maps fields including customerName`() = runTest {
         val api = FakeReceivingApiService(
             analyzeResp = Response.success(
-                ShippingAnalyzeResponse(mode = "shipping", trackingNumber = "1Z999", carrier = "ups", raw = "{}")
+                ShippingAnalyzeResponse(
+                    mode = "shipping",
+                    trackingNumber = "1Z999",
+                    carrier = "ups",
+                    customerName = "Eco",
+                    raw = "{}"
+                )
             )
         )
         val repo = ReceivingRepository(api)
@@ -115,6 +134,7 @@ class ReceivingRepositoryTest {
         val success = repo.analyzeShipping("base64").toList()[1] as NetworkResult.Success
         assertEquals("1Z999", success.data.trackingNumber)
         assertEquals("ups", success.data.carrier)
+        assertEquals("Eco", success.data.customerName)
         assertEquals("{}", success.data.raw)
     }
 
@@ -123,8 +143,8 @@ class ReceivingRepositoryTest {
         val api = FakeReceivingApiService(
             getItemsResp = Response.success(
                 listOf(
-                    ReceivingItemDto(1, "1Z999", "FedEx", false),
-                    ReceivingItemDto(2, null, null, true)
+                    ReceivingItemDto(1, "1Z999", "FedEx", customerName = "Acme", needsReview = false),
+                    ReceivingItemDto(2, null, null, needsReview = true)
                 )
             )
         )
@@ -133,8 +153,10 @@ class ReceivingRepositoryTest {
         val success = repo.getItems(42).toList()[1] as NetworkResult.Success
         assertEquals(2, success.data.size)
         assertEquals("1Z999", success.data[0].trackingNo)
+        assertEquals("Acme", success.data[0].customerName)
         assertEquals("", success.data[1].trackingNo)
         assertEquals("", success.data[1].carrier)
+        assertEquals("", success.data[1].customerName)
         assertTrue(success.data[1].needsReview)
     }
 
@@ -143,9 +165,39 @@ class ReceivingRepositoryTest {
         val api = FakeReceivingApiService(createItemResp = Response.success(CreateItemResponse(99)))
         val repo = ReceivingRepository(api)
 
-        val req = CreateItemRequest(receivingBatchId = 42, photoPath = "/p.jpg")
+        val req = CreateItemRequest(receivingBatchId = 42, photoPaths = listOf("/p.jpg"), customerName = "Eco")
         val success = repo.createItem(req).toList()[1] as NetworkResult.Success
         assertEquals(99, success.data)
+    }
+
+    @Test
+    fun `isDuplicateTracking true when total gt 0`() = runTest {
+        val api = FakeReceivingApiService(
+            searchItemsResp = Response.success(ReceivingItemSearchPage(total = 1))
+        )
+        val repo = ReceivingRepository(api)
+        val success = repo.isDuplicateTracking("1Z999").toList()[1] as NetworkResult.Success
+        assertTrue(success.data)
+    }
+
+    @Test
+    fun `isDuplicateTracking false when total 0`() = runTest {
+        val api = FakeReceivingApiService(
+            searchItemsResp = Response.success(ReceivingItemSearchPage(total = 0))
+        )
+        val repo = ReceivingRepository(api)
+        val success = repo.isDuplicateTracking("1Z999").toList()[1] as NetworkResult.Success
+        assertFalse(success.data)
+    }
+
+    @Test
+    fun `isDuplicateTracking treats search failure as not duplicate`() = runTest {
+        val api = FakeReceivingApiService(
+            searchItemsThrows = RuntimeException("network down")
+        )
+        val repo = ReceivingRepository(api)
+        val success = repo.isDuplicateTracking("1Z999").toList()[1] as NetworkResult.Success
+        assertFalse(success.data)
     }
 
     @Test

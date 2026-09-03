@@ -142,6 +142,7 @@ fun DockReceivingScreen(
                         onPhotoCaptured = viewModel::onPhotoCaptured,
                         onTrackingChange = viewModel::onTrackingChanged,
                         onCarrierChange = viewModel::onCarrierChanged,
+                        onCustomerNameChange = viewModel::onCustomerNameChanged,
                         onConditionChange = viewModel::onConditionChanged
                     )
                     InputMethod.BarcodeScan -> ScanContent(
@@ -156,6 +157,25 @@ fun DockReceivingScreen(
             val c = uiState.confirm
             if (c != null && (c.barcodeDecoding || c.uploading || c.analyzing || c.uploadFailed)) {
                 ProcessingOverlay(confirm = c)
+            }
+
+            val dup = uiState.confirm?.pendingDuplicateTracking
+            if (dup != null) {
+                AlertDialog(
+                    onDismissRequest = viewModel::dismissDuplicateSave,
+                    title = { Text(strings.dock_duplicateTitle) },
+                    text = { Text(strings.dock_duplicateBody(dup)) },
+                    confirmButton = {
+                        TextButton(onClick = viewModel::confirmDuplicateSave) {
+                            Text(strings.dock_duplicateConfirm)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = viewModel::dismissDuplicateSave) {
+                            Text(strings.common_cancel)
+                        }
+                    }
+                )
             }
         }
     }
@@ -329,6 +349,7 @@ private fun RecordingContent(
     onPhotoCaptured: (File) -> Unit,
     onTrackingChange: (String) -> Unit,
     onCarrierChange: (String) -> Unit,
+    onCustomerNameChange: (String) -> Unit,
     onConditionChange: (String) -> Unit
 ) {
     // 单一结构（两态一致，相机绝不跳动）：
@@ -344,6 +365,7 @@ private fun RecordingContent(
                     confirm = confirm,
                     onTrackingChange = onTrackingChange,
                     onCarrierChange = onCarrierChange,
+                    onCustomerNameChange = onCustomerNameChange,
                     onConditionChange = onConditionChange
                 )
             }
@@ -525,12 +547,24 @@ private fun ScanItemRow(item: ReceivingItemUi) {
         )
         if (item.needsReview) {
             Icon(Icons.Default.Warning, contentDescription = strings.dock_needsReview, tint = MaterialTheme.colorScheme.error)
-        } else if (item.carrier.isNotBlank()) {
-            Text(
-                item.carrier,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+        } else {
+            Column(horizontalAlignment = Alignment.End) {
+                if (item.carrier.isNotBlank()) {
+                    Text(
+                        item.carrier,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (item.customerName.isNotBlank()) {
+                    Text(
+                        item.customerName,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
+                    )
+                }
+            }
         }
     }
 }
@@ -714,6 +748,7 @@ private fun ConfirmFields(
     confirm: ConfirmState,
     onTrackingChange: (String) -> Unit,
     onCarrierChange: (String) -> Unit,
+    onCustomerNameChange: (String) -> Unit,
     onConditionChange: (String) -> Unit
 ) {
     val strings = LocalAppStrings.current
@@ -726,8 +761,16 @@ private fun ConfirmFields(
             textStyle = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.fillMaxWidth()
         )
-        Spacer(Modifier.height(8.dp))
-        // Carrier 与 Condition 并排，省一行高度。
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedTextField(
+            value = confirm.customerName,
+            onValueChange = onCustomerNameChange,
+            label = { Text(strings.dock_customerName) },
+            singleLine = true,
+            textStyle = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(modifier = Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             DropdownField(strings.dock_carrier, confirm.carrier, CARRIERS, onCarrierChange, modifier = Modifier.weight(1f))
             DropdownField(strings.dock_condition, confirm.condition, CONDITIONS, onConditionChange, modifier = Modifier.weight(1f))

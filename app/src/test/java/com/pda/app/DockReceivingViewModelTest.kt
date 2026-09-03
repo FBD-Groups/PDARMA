@@ -41,17 +41,21 @@ private class FakeReceivingRepository(
     var createItemFlow: () -> Flow<NetworkResult<Int>> = { flowOf(NetworkResult.Success(1)) }
     var getItemsFlow: () -> Flow<NetworkResult<List<ReceivingItemUi>>> = { flowOf(NetworkResult.Success(emptyList())) }
     var closeFlow: () -> Flow<NetworkResult<Unit>> = { flowOf(NetworkResult.Success(Unit)) }
+    var duplicateFlow: () -> Flow<NetworkResult<Boolean>> = { flowOf(NetworkResult.Success(false)) }
     var lastCreateItemReq: CreateItemRequest? = null
+    var createItemCallCount: Int = 0
 
     override fun createBatch(warehouseId: Int) = createBatchFlow()
     override fun uploadPhoto(bytes: ByteArray, filename: String) = uploadFlow()
     override fun analyzeShipping(base64: String) = analyzeFlow()
     override fun createItem(req: CreateItemRequest): Flow<NetworkResult<Int>> {
+        createItemCallCount++
         lastCreateItemReq = req
         return createItemFlow()
     }
     override fun getItems(batchId: Int) = getItemsFlow()
     override fun closeBatch(batchId: Int) = closeFlow()
+    override fun isDuplicateTracking(trackingNumber: String) = duplicateFlow()
 
     private companion object {
         val ThrowingApi = object : com.pda.app.data.api.ReceivingApiService {
@@ -62,6 +66,12 @@ private class FakeReceivingRepository(
             override suspend fun getItems(batchId: Int) = error("unused")
             override suspend fun closeBatch(id: Int) = error("unused")
             override suspend fun getBatches(warehouseId: Int?, scanUser: String?, scanDateFrom: String?) = error("unused")
+            override suspend fun searchItems(
+                trackingNumberExact: String,
+                receivedDateFrom: String,
+                page: Int,
+                pageSize: Int
+            ) = error("unused")
         }
     }
 }
@@ -140,15 +150,22 @@ class DockReceivingViewModelTest {
     }
 
     @Test
-    fun `onPhotoCaptured runs upload and analyze, autofills fields`() = runTest {
+    fun `onPhotoCaptured auto-saves with tracking carrier customerName and photoPaths`() = runTest {
         val repo = FakeReceivingRepository().apply {
             createBatchFlow = { flowOf(NetworkResult.Success(BatchInfo(42, "B-001"))) }
             uploadFlow = { flowOf(NetworkResult.Loading, NetworkResult.Success("/p/abc.jpg")) }
             analyzeFlow = {
                 flowOf(
                     NetworkResult.Loading,
-                    NetworkResult.Success(ShippingAnalysis("1Z999AA10123456784", "fedex", null, "{}"))
+                    NetworkResult.Success(
+                        ShippingAnalysis("1Z999AA10123456784", "fedex", null, "{}", customerName = "Eco")
+                    )
                 )
+            }
+            getItemsFlow = {
+                flowOf(NetworkResult.Success(listOf(
+                    ReceivingItemUi(1, "1Z999AA10123456784", "FedEx", false, "Eco")
+                )))
             }
         }
         val vm = vm(repo)
@@ -157,18 +174,17 @@ class DockReceivingViewModelTest {
         vm.onPhotoCaptured(File("capture.jpg"))
         advanceUntilIdle()
 
-        val c = vm.uiState.value.confirm!!
-        // 单屏内联：拍照后仍处于 Recording，confirm 字段内联显示在预览下方。
-        assertEquals(Phase.Recording, vm.uiState.value.phase)
-        assertEquals("/p/abc.jpg", c.photoPath)
-        assertFalse(c.uploading)
-        assertFalse(c.analyzing)
-        assertEquals("1Z999AA10123456784", c.trackingNumber)
-        assertEquals("FedEx", c.carrier)
-        assertTrue(c.trackingAutoFilled)
-        assertTrue(c.carrierAutoFilled)
-        assertEquals("{}", c.rawJson)
-        assertTrue(c.canSave) // 自动识别出运单号 → 可保存
+        assertEquals(1, repo.createItemCallCount)
+        val req = repo.lastCreateItemReq!!
+        assertEquals("1Z999AA10123456784", req.trackingNumber)
+        assertEquals("FedEx", req.carrier)
+        assertEquals("Eco", req.customerName)
+        assertEquals(listOf("/p/abc.jpg"), req.photoPaths)
+        assertEquals("AI", req.source)
+        assertEquals(false, req.needsReview)
+        assertTrue(vm.uiState.value.recentlySaved)
+        assertEquals("", vm.uiState.value.confirm!!.trackingNumber)
+        assertEquals(1, vm.uiState.value.itemCount)
     }
 
     @Test
@@ -187,28 +203,35 @@ class DockReceivingViewModelTest {
         assertEquals("/p/abc.jpg", c.photoPath)
         assertEquals("", c.trackingNumber)
         assertFalse(c.analyzing)
-        assertFalse(c.canSave) // 解析失败、无运单号 → 不可保存
+        assertFalse(c.canSave)
+        assertEquals(0, repo.createItemCallCount)
         assertEquals(Phase.Recording, vm.uiState.value.phase)
     }
 
     @Test
-    fun `no tracking after analyze blocks save until entered manually`() = runTest {
+    fun `no tracking after analyze blocks auto-save until entered manually`() = runTest {
         val repo = FakeReceivingRepository().apply {
             createBatchFlow = { flowOf(NetworkResult.Success(BatchInfo(42, "B-001"))) }
             uploadFlow = { flowOf(NetworkResult.Success("/p/abc.jpg")) }
-            // 上传成功、解析成功但未识别出运单号
-            analyzeFlow = { flowOf(NetworkResult.Success(ShippingAnalysis(null, "UPS", null, "{}"))) }
+            analyzeFlow = { flowOf(NetworkResult.Success(ShippingAnalysis(null, "UPS", null, "{}", customerName = null))) }
+            getItemsFlow = { flowOf(NetworkResult.Success(emptyList())) }
         }
         val vm = vm(repo)
         vm.startBatch(); advanceUntilIdle()
         vm.onPhotoCaptured(File("capture.jpg")); advanceUntilIdle()
 
-        // 照片已上传、解析结束，但没有运单号 → 仍不可保存
+        assertEquals(0, repo.createItemCallCount)
         assertFalse(vm.uiState.value.confirm!!.canSave)
 
-        // 手工输入运单号后 → 可保存
         vm.onTrackingChanged("1Z999AA10123456784")
         assertTrue(vm.uiState.value.confirm!!.canSave)
+        // 手改运单号不自动保存
+        advanceUntilIdle()
+        assertEquals(0, repo.createItemCallCount)
+
+        vm.saveItem(); advanceUntilIdle()
+        assertEquals(1, repo.createItemCallCount)
+        assertEquals("1Z999AA10123456784", repo.lastCreateItemReq!!.trackingNumber)
     }
 
     @Test
@@ -227,6 +250,7 @@ class DockReceivingViewModelTest {
         assertTrue(c.uploadFailed)
         assertNull(c.photoPath)
         assertFalse(c.canSave)
+        assertEquals(0, repo.createItemCallCount)
     }
 
     @Test
@@ -248,10 +272,9 @@ class DockReceivingViewModelTest {
 
         assertEquals(true, repo.lastCreateItemReq!!.needsReview)
         assertEquals(42, repo.lastCreateItemReq!!.receivingBatchId)
-        assertEquals("/p/abc.jpg", repo.lastCreateItemReq!!.photoPath)
+        assertEquals(listOf("/p/abc.jpg"), repo.lastCreateItemReq!!.photoPaths)
         val s = vm.uiState.value
         assertEquals(Phase.Recording, s.phase)
-        // 保存后重置为空草稿（Tracking # 框常驻），而非移除。
         assertNotNull(s.confirm)
         assertEquals("", s.confirm!!.trackingNumber)
         assertNull(s.confirm!!.photoFile)
@@ -260,7 +283,7 @@ class DockReceivingViewModelTest {
     }
 
     @Test
-    fun `saveItem sends needsReview false when tracking present`() = runTest {
+    fun `auto-save sends needsReview false when tracking present`() = runTest {
         val repo = FakeReceivingRepository().apply {
             createBatchFlow = { flowOf(NetworkResult.Success(BatchInfo(42, "B-001"))) }
             uploadFlow = { flowOf(NetworkResult.Success("/p/abc.jpg")) }
@@ -271,8 +294,6 @@ class DockReceivingViewModelTest {
         vm.startBatch(); advanceUntilIdle()
         vm.onPhotoCaptured(File("capture.jpg")); advanceUntilIdle()
 
-        vm.saveItem(); advanceUntilIdle()
-
         assertEquals(false, repo.lastCreateItemReq!!.needsReview)
         assertEquals("1Z999AA10123456784", repo.lastCreateItemReq!!.trackingNumber)
     }
@@ -282,7 +303,6 @@ class DockReceivingViewModelTest {
         val repo = FakeReceivingRepository().apply {
             createBatchFlow = { flowOf(NetworkResult.Success(BatchInfo(42, "B-001"))) }
             uploadFlow = { flowOf(NetworkResult.Success("/p/abc.jpg")) }
-            // AI 给出一个不同的运单号；条码应当优先。
             analyzeFlow = { flowOf(NetworkResult.Success(ShippingAnalysis("AI_WRONG_123456", "UPS", null, "{}"))) }
             getItemsFlow = { flowOf(NetworkResult.Success(emptyList())) }
         }
@@ -290,11 +310,7 @@ class DockReceivingViewModelTest {
         vm.startBatch(); advanceUntilIdle()
         vm.onPhotoCaptured(File("capture.jpg")); advanceUntilIdle()
 
-        val c = vm.uiState.value.confirm!!
-        assertEquals("1Z999AA10123456784", c.trackingNumber)
-        assertTrue(c.trackingFromBarcode)
-
-        vm.saveItem(); advanceUntilIdle()
+        assertEquals(1, repo.createItemCallCount)
         assertEquals("1Z999AA10123456784", repo.lastCreateItemReq!!.trackingNumber)
         assertEquals("Barcode", repo.lastCreateItemReq!!.source)
     }
@@ -311,14 +327,12 @@ class DockReceivingViewModelTest {
         vm.startBatch(); advanceUntilIdle()
         vm.onPhotoCaptured(File("capture.jpg")); advanceUntilIdle()
 
-        assertFalse(vm.uiState.value.confirm!!.trackingFromBarcode)
-        vm.saveItem(); advanceUntilIdle()
         assertEquals("1Z999AA10123456784", repo.lastCreateItemReq!!.trackingNumber)
         assertEquals("AI", repo.lastCreateItemReq!!.source)
     }
 
     @Test
-    fun `barcode fills tracking even when AI analysis fails`() = runTest {
+    fun `barcode fills tracking even when AI analysis fails and auto-saves`() = runTest {
         val repo = FakeReceivingRepository().apply {
             createBatchFlow = { flowOf(NetworkResult.Success(BatchInfo(42, "B-001"))) }
             uploadFlow = { flowOf(NetworkResult.Success("/p/abc.jpg")) }
@@ -329,10 +343,47 @@ class DockReceivingViewModelTest {
         vm.startBatch(); advanceUntilIdle()
         vm.onPhotoCaptured(File("capture.jpg")); advanceUntilIdle()
 
-        val c = vm.uiState.value.confirm!!
-        assertEquals("1Z999AA10123456784", c.trackingNumber)
-        assertTrue(c.trackingFromBarcode)
-        assertTrue(c.canSave)
+        assertEquals(1, repo.createItemCallCount)
+        assertEquals("1Z999AA10123456784", repo.lastCreateItemReq!!.trackingNumber)
+        assertEquals("Barcode", repo.lastCreateItemReq!!.source)
+    }
+
+    @Test
+    fun `duplicate tracking shows pending dialog and confirms save`() = runTest {
+        val repo = FakeReceivingRepository().apply {
+            createBatchFlow = { flowOf(NetworkResult.Success(BatchInfo(42, "B-001"))) }
+            uploadFlow = { flowOf(NetworkResult.Success("/p/abc.jpg")) }
+            analyzeFlow = { flowOf(NetworkResult.Success(ShippingAnalysis("1Z999AA10123456784", "UPS", null, "{}"))) }
+            duplicateFlow = { flowOf(NetworkResult.Success(true)) }
+            getItemsFlow = { flowOf(NetworkResult.Success(emptyList())) }
+        }
+        val vm = vm(repo)
+        vm.startBatch(); advanceUntilIdle()
+        vm.onPhotoCaptured(File("capture.jpg")); advanceUntilIdle()
+
+        assertEquals(0, repo.createItemCallCount)
+        assertEquals("1Z999AA10123456784", vm.uiState.value.confirm!!.pendingDuplicateTracking)
+
+        vm.confirmDuplicateSave(); advanceUntilIdle()
+        assertEquals(1, repo.createItemCallCount)
+        assertNull(vm.uiState.value.confirm!!.pendingDuplicateTracking)
+    }
+
+    @Test
+    fun `dismiss duplicate does not save`() = runTest {
+        val repo = FakeReceivingRepository().apply {
+            createBatchFlow = { flowOf(NetworkResult.Success(BatchInfo(42, "B-001"))) }
+            uploadFlow = { flowOf(NetworkResult.Success("/p/abc.jpg")) }
+            analyzeFlow = { flowOf(NetworkResult.Success(ShippingAnalysis("1Z999AA10123456784", "UPS", null, "{}"))) }
+            duplicateFlow = { flowOf(NetworkResult.Success(true)) }
+        }
+        val vm = vm(repo)
+        vm.startBatch(); advanceUntilIdle()
+        vm.onPhotoCaptured(File("capture.jpg")); advanceUntilIdle()
+
+        vm.dismissDuplicateSave(); advanceUntilIdle()
+        assertEquals(0, repo.createItemCallCount)
+        assertNull(vm.uiState.value.confirm!!.pendingDuplicateTracking)
     }
 
     @Test
@@ -340,7 +391,8 @@ class DockReceivingViewModelTest {
         val repo = FakeReceivingRepository().apply {
             createBatchFlow = { flowOf(NetworkResult.Success(BatchInfo(42, "B-001"))) }
             uploadFlow = { flowOf(NetworkResult.Success("/p/abc.jpg")) }
-            analyzeFlow = { flowOf(NetworkResult.Success(ShippingAnalysis("1Z999AA10123456784", null, null, null))) }
+            // 无运单号，避免自动保存干扰 cancel 测试
+            analyzeFlow = { flowOf(NetworkResult.Success(ShippingAnalysis(null, null, null, null))) }
         }
         val vm = vm(repo)
         vm.startBatch(); advanceUntilIdle()
@@ -349,9 +401,9 @@ class DockReceivingViewModelTest {
         vm.cancelConfirm()
 
         assertEquals(Phase.Recording, vm.uiState.value.phase)
-        // 取消后回到空草稿（框常驻），不再是 null。
         assertNotNull(vm.uiState.value.confirm)
         assertEquals("", vm.uiState.value.confirm!!.trackingNumber)
+        assertEquals(0, repo.createItemCallCount)
     }
 
     @Test

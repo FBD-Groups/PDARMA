@@ -88,7 +88,13 @@ open class ReceivingRepository @Inject constructor(
             val resp = api.analyze(AnalyzeRequest(mode = "shipping", photos = listOf(base64)))
             if (resp.isSuccessful && resp.body() != null) {
                 val a = resp.body()!!
-                emit(NetworkResult.Success(ShippingAnalysis(a.trackingNumber, a.carrier, a.service, a.raw)))
+                emit(NetworkResult.Success(ShippingAnalysis(
+                    trackingNumber = a.trackingNumber,
+                    carrier = a.carrier,
+                    service = a.service,
+                    raw = a.raw,
+                    customerName = a.customerName
+                )))
             } else {
                 emit(errorFrom(resp, "AI analysis failed"))
             }
@@ -123,7 +129,8 @@ open class ReceivingRepository @Inject constructor(
                         receivingItemId = it.receivingItemId,
                         trackingNo = it.trackingNo.orEmpty(),
                         carrier = it.carrier.orEmpty(),
-                        needsReview = it.needsReview ?: false
+                        needsReview = it.needsReview ?: false,
+                        customerName = it.customerName.orEmpty()
                     )
                 }
                 emit(NetworkResult.Success(items))
@@ -145,6 +152,30 @@ open class ReceivingRepository @Inject constructor(
         } catch (e: Exception) {
             Log.e(TAG, "closeBatch: ${e.message}", e)
             emit(NetworkResult.Error(e.message ?: NETWORK_FAIL))
+        }
+    }.flowOn(Dispatchers.IO)
+
+    /**
+     * 近 10 天是否已有同一运单号。查询失败视为不重复（对齐网页，避免网络问题卡死录入）。
+     */
+    open fun isDuplicateTracking(trackingNumber: String): Flow<NetworkResult<Boolean>> = flow {
+        emit(NetworkResult.Loading)
+        try {
+            val from = java.time.LocalDate.now().minusDays(10).toString()
+            val resp = api.searchItems(
+                trackingNumberExact = trackingNumber,
+                receivedDateFrom = from,
+                page = 1,
+                pageSize = 1
+            )
+            if (resp.isSuccessful && resp.body() != null) {
+                emit(NetworkResult.Success(resp.body()!!.total > 0))
+            } else {
+                emit(NetworkResult.Success(false))
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "isDuplicateTracking: ${e.message}", e)
+            emit(NetworkResult.Success(false))
         }
     }.flowOn(Dispatchers.IO)
 
