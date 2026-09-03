@@ -141,9 +141,7 @@ fun DockReceivingScreen(
                         state = uiState,
                         onPhotoCaptured = viewModel::onPhotoCaptured,
                         onTrackingChange = viewModel::onTrackingChanged,
-                        onCarrierChange = viewModel::onCarrierChanged,
-                        onCustomerNameChange = viewModel::onCustomerNameChanged,
-                        onConditionChange = viewModel::onConditionChanged
+                        onCustomerNameChange = viewModel::onCustomerNameChanged
                     )
                     InputMethod.BarcodeScan -> ScanContent(
                         state = uiState,
@@ -348,24 +346,18 @@ private fun RecordingContent(
     state: DockReceivingUiState,
     onPhotoCaptured: (File) -> Unit,
     onTrackingChange: (String) -> Unit,
-    onCarrierChange: (String) -> Unit,
-    onCustomerNameChange: (String) -> Unit,
-    onConditionChange: (String) -> Unit
+    onCustomerNameChange: (String) -> Unit
 ) {
-    // 字段区优先占位（tracking + customer 始终可见），相机吃剩余高度。
-    // 以前相机固定 240dp 会把确认区挤到只剩一栏。
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+    // 顶部仅 Tracking + Customer（矮栏、无上下额外边距）；相机吃满剩余高度，快门叠在预览底边。
+    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         state.confirm?.let { confirm ->
             ConfirmFields(
                 confirm = confirm,
                 onTrackingChange = onTrackingChange,
-                onCarrierChange = onCarrierChange,
-                onCustomerNameChange = onCustomerNameChange,
-                onConditionChange = onConditionChange
+                onCustomerNameChange = onCustomerNameChange
             )
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
             CameraCapture(
                 modifier = Modifier.fillMaxSize(),
@@ -623,8 +615,7 @@ private fun CameraCapture(
         }
     }
 
-    Column(modifier = modifier) {
-        // 预览吃满父布局剩余高度（字段区已优先占位），最低 120dp。
+    Box(modifier = modifier) {
         AndroidView(
             factory = { ctx ->
                 PreviewView(ctx).apply {
@@ -633,19 +624,16 @@ private fun CameraCapture(
                     this.controller = controller
                 }
             },
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-                .heightIn(min = 120.dp)
+            modifier = Modifier.fillMaxSize()
         )
-        Spacer(modifier = Modifier.height(8.dp))
         val steady = rememberCameraSteady()
-        Box(modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp), contentAlignment = Alignment.Center) {
-            ShutterButton(
-                ready = steady,
-                onClick = { capturePhoto(context, controller, cameraExecutor, onPhotoCaptured) }
-            )
-        }
+        ShutterButton(
+            ready = steady,
+            onClick = { capturePhoto(context, controller, cameraExecutor, onPhotoCaptured) },
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 16.dp)
+        )
     }
 }
 
@@ -688,24 +676,34 @@ private fun rememberCameraSteady(): Boolean {
 private const val STEADY_THRESHOLD = 0.12f          // rad/s，手持端稳的角速度上限
 private const val STEADY_HOLD_NANOS = 250_000_000L  // 持续稳定 250ms 才算就绪
 
-/** 相机快门大圆点：就绪（端稳）时主色，晃动时灰色。 */
+/** 半透明快门：描边环 + 透明底，叠在预览底部。就绪为主色，晃动为淡白。 */
 @Composable
-private fun ShutterButton(ready: Boolean, onClick: () -> Unit) {
-    val color by animateColorAsState(
-        targetValue = if (ready) MaterialTheme.colorScheme.primary
-        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-        label = "shutterColor"
+private fun ShutterButton(
+    ready: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val ring by animateColorAsState(
+        targetValue = if (ready) MaterialTheme.colorScheme.primary.copy(alpha = 0.95f)
+        else Color.White.copy(alpha = 0.55f),
+        label = "shutterRing"
     )
     Box(
-        modifier = Modifier
+        modifier = modifier
             .size(72.dp)
             .clip(CircleShape)
-            .border(width = 4.dp, color = color, shape = CircleShape)
-            .padding(6.dp)
-            .clip(CircleShape)
-            .background(color)
-            .clickable(onClick = onClick)
-    )
+            .border(width = 4.dp, color = ring, shape = CircleShape)
+            .background(Color.Black.copy(alpha = 0.15f), CircleShape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .size(52.dp)
+                .clip(CircleShape)
+                .background(ring.copy(alpha = if (ready) 0.35f else 0.2f))
+        )
+    }
 }
 
 private fun capturePhoto(
@@ -730,66 +728,37 @@ private fun capturePhoto(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ConfirmFields(
     confirm: ConfirmState,
     onTrackingChange: (String) -> Unit,
-    onCarrierChange: (String) -> Unit,
-    onCustomerNameChange: (String) -> Unit,
-    onConditionChange: (String) -> Unit
+    onCustomerNameChange: (String) -> Unit
 ) {
     val strings = LocalAppStrings.current
+    // 矮栏约 36dp（默认 OutlinedTextField ~56dp 的一半多一点）；用 placeholder 避免浮动 label 撑高。
+    val fieldHeight = 36.dp
     Column(modifier = Modifier.fillMaxWidth()) {
         OutlinedTextField(
             value = confirm.trackingNumber,
             onValueChange = onTrackingChange,
-            label = { Text(strings.dock_trackingLabel) },
+            placeholder = { Text(strings.dock_trackingLabel, style = MaterialTheme.typography.bodySmall) },
             singleLine = true,
-            textStyle = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.fillMaxWidth()
+            textStyle = MaterialTheme.typography.bodySmall,
+            modifier = Modifier
+                .fillMaxWidth()
+                .defaultMinSize(minHeight = fieldHeight)
+                .height(fieldHeight),
         )
-        Spacer(modifier = Modifier.height(8.dp))
         OutlinedTextField(
             value = confirm.customerName,
             onValueChange = onCustomerNameChange,
-            label = { Text(strings.dock_customerName) },
+            placeholder = { Text(strings.dock_customerName, style = MaterialTheme.typography.bodySmall) },
             singleLine = true,
-            textStyle = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.fillMaxWidth()
+            textStyle = MaterialTheme.typography.bodySmall,
+            modifier = Modifier
+                .fillMaxWidth()
+                .defaultMinSize(minHeight = fieldHeight)
+                .height(fieldHeight),
         )
-        Spacer(modifier = Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            DropdownField(strings.dock_carrier, confirm.carrier, CARRIERS, onCarrierChange, modifier = Modifier.weight(1f))
-            DropdownField(strings.dock_condition, confirm.condition, CONDITIONS, onConditionChange, modifier = Modifier.weight(1f))
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun DropdownField(
-    label: String,
-    value: String,
-    options: List<String>,
-    onValueChange: (String) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    var expanded by remember { mutableStateOf(false) }
-    ExposedDropdownMenuBox(modifier = modifier, expanded = expanded, onExpandedChange = { expanded = it }) {
-        OutlinedTextField(
-            value = value,
-            onValueChange = {},
-            readOnly = true,
-            label = { Text(label) },
-            textStyle = MaterialTheme.typography.bodyMedium,
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            modifier = Modifier.menuAnchor().fillMaxWidth()
-        )
-        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            options.forEach { opt ->
-                DropdownMenuItem(text = { Text(opt) }, onClick = { onValueChange(opt); expanded = false })
-            }
-        }
     }
 }

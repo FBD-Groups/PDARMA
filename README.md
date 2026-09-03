@@ -1,6 +1,6 @@
 # FBDRMA (PDA)
 
-**Android 下载试用：** [PDARMA-v1.3.apk](https://github.com/FBD-Groups/PDARMA/releases/download/v1.3/PDARMA-v1.3.apk)  
+**Android 下载试用：** [PDARMA-v1.4.apk](https://github.com/FBD-Groups/PDARMA/releases/download/v1.4/PDARMA-v1.4.apk)  
 （[全部 Releases](https://github.com/FBD-Groups/PDARMA/releases)）
 
 Android 手持终端应用，对接 RMA 后端 API，用于仓库现场作业（收货、盘点等）。
