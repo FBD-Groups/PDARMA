@@ -75,8 +75,12 @@ data class DockReceivingUiState(
     val confirm: ConfirmState? = null,
     val isBusy: Boolean = false,          // batch-level op (start/close/refresh) in flight
     val message: DockMessage? = null,     // one-shot snackbar marker; cleared via messageShown()
-    val recentlySaved: Boolean = false    // shows "Saved" in the bottom status bar until next capture
+    /** 底部状态提示：自动入库成功 / 失败需重拍；下次拍照清为 Idle。 */
+    val captureStatus: CaptureStatus = CaptureStatus.Idle
 ) {
     val itemCount: Int get() = items.size
     val needsReviewCount: Int get() = items.count { it.needsReview }
 }
+
+/** 拍照录入底部提示（替代 Confirm 按钮）。 */
+enum class CaptureStatus { Idle, Success, Failure }

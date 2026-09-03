@@ -61,6 +61,10 @@ interface AppStrings {
     val dock_analyzing: String
     val dock_uploadFailed: String
     val dock_saved: String
+    /** 自动入库成功（底部状态）。 */
+    val dock_statusSuccess: String
+    /** 自动入库/识别失败，提示重拍（底部状态）。 */
+    val dock_statusFailure: String
     val dock_needsReview: String     // contentDescription
     val dock_noTracking: String
     val dock_cameraPermission: String

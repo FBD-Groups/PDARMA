@@ -9,6 +9,7 @@ import com.pda.app.data.api.model.ReceivingItemUi
 import com.pda.app.data.api.model.ShippingAnalysis
 import com.pda.app.data.repository.ReceivingRepository
 import com.pda.app.ui.dockreceiving.BarcodeDecoder
+import com.pda.app.ui.dockreceiving.CaptureStatus
 import com.pda.app.ui.dockreceiving.CompressedImage
 import com.pda.app.ui.dockreceiving.DockMessage
 import com.pda.app.ui.dockreceiving.DockReceivingViewModel
@@ -199,7 +200,7 @@ class DockReceivingViewModelTest {
         assertEquals(listOf("/p/abc.jpg"), req.photoPaths)
         assertEquals("AI", req.source)
         assertEquals(false, req.needsReview)
-        assertTrue(vm.uiState.value.recentlySaved)
+        assertEquals(CaptureStatus.Success, vm.uiState.value.captureStatus)
         assertEquals("1Z999AA10123456784", vm.uiState.value.confirm!!.trackingNumber)
         assertEquals("Eco", vm.uiState.value.confirm!!.customerName)
         assertNull(vm.uiState.value.confirm!!.photoFile)

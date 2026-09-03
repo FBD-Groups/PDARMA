@@ -47,6 +47,8 @@ object SpanishStrings : AppStrings {
     override val dock_analyzing = "Analizando…"
     override val dock_uploadFailed = "Error al subir — reintentar"
     override val dock_saved = "Guardado"
+    override val dock_statusSuccess = "Éxito"
+    override val dock_statusFailure = "Falló — reintentar"
     override val dock_needsReview = "Requiere revisión"
     override val dock_noTracking = "(sin # de rastreo)"
     override val dock_cameraPermission = "Se requiere permiso de cámara. Actívelo en Ajustes y vuelva."

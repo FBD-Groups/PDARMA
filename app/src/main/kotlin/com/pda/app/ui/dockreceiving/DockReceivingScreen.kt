@@ -132,7 +132,6 @@ fun DockReceivingScreen(
                 when (uiState.inputMethod) {
                     InputMethod.Picture -> RecordingBottomBar(
                         state = uiState,
-                        onConfirm = viewModel::saveItem,
                         onCloseBatch = viewModel::confirmCloseBatch
                     )
                     InputMethod.BarcodeScan -> ScanBottomBar(
@@ -401,30 +400,46 @@ private fun RecordingContent(
 @Composable
 private fun RecordingBottomBar(
     state: DockReceivingUiState,
-    onConfirm: () -> Unit,
     onCloseBatch: () -> Unit
 ) {
     val strings = LocalAppStrings.current
     Surface(tonalElevation = 3.dp) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             OutlinedButton(
                 onClick = onCloseBatch,
                 enabled = !state.isBusy,
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.weight(1f).height(48.dp)
-            ) { Text(strings.dock_closeBatch, maxLines = 1) }
-            Button(
-                onClick = onConfirm,
-                enabled = state.confirm?.canSave == true,
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.weight(1f).height(48.dp)
+            ) { Text(strings.dock_close, maxLines = 1) }
+            // 自动入库后不再需要 Confirm；右侧显示成功/失败提示。
+            Box(
+                modifier = Modifier.weight(1f).height(48.dp),
+                contentAlignment = Alignment.Center
             ) {
-                if (state.confirm?.saving == true)
-                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                else Text(strings.dock_confirm, maxLines = 1)
+                when {
+                    state.confirm?.saving == true ->
+                        CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                    state.captureStatus == CaptureStatus.Success ->
+                        Text(
+                            strings.dock_statusSuccess,
+                            color = Color(0xFF2E7D32),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1
+                        )
+                    state.captureStatus == CaptureStatus.Failure ->
+                        Text(
+                            strings.dock_statusFailure,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1
+                        )
+                }
             }
         }
     }

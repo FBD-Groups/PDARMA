@@ -47,6 +47,8 @@ object ChineseStrings : AppStrings {
     override val dock_analyzing = "识别中…"
     override val dock_uploadFailed = "上传失败 — 请重拍"
     override val dock_saved = "已保存"
+    override val dock_statusSuccess = "成功"
+    override val dock_statusFailure = "失败重试"
     override val dock_needsReview = "需复核"
     override val dock_noTracking = "（无单号）"
     override val dock_cameraPermission = "需要相机权限。请在系统设置中开启后返回。"

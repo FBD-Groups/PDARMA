@@ -119,7 +119,7 @@ class DockReceivingViewModel @Inject constructor(
                     pendingDuplicateTracking = null,
                     rawJson = null
                 ),
-                recentlySaved = false
+                captureStatus = CaptureStatus.Idle
             )
         }
         // 条码解码走原始全分辨率照片；上传走原图（不裁不缩边）；AI 走 MAX_EDGE 压缩图。
@@ -134,7 +134,8 @@ class DockReceivingViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         confirm = it.confirm?.copy(uploading = false, uploadFailed = true),
-                        message = DockMessage.PhotoProcessingFailed
+                        message = DockMessage.PhotoProcessingFailed,
+                        captureStatus = CaptureStatus.Failure
                     )
                 }
             }
@@ -149,7 +150,8 @@ class DockReceivingViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         confirm = it.confirm?.copy(analyzing = false),
-                        message = DockMessage.PhotoProcessingFailed
+                        message = DockMessage.PhotoProcessingFailed,
+                        captureStatus = CaptureStatus.Failure
                     )
                 }
             }
@@ -193,7 +195,8 @@ class DockReceivingViewModel @Inject constructor(
                     _uiState.update {
                         it.copy(
                             confirm = it.confirm?.copy(uploading = false, uploadFailed = true),
-                            message = DockMessage.Text(result.message)
+                            message = DockMessage.Text(result.message),
+                            captureStatus = CaptureStatus.Failure
                         )
                     }
                 }
@@ -246,7 +249,8 @@ class DockReceivingViewModel @Inject constructor(
                                 trackingFromBarcode = fromBarcode,
                                 rawJson = result.data.raw
                             ),
-                            message = if (noTracking) DockMessage.TrackingNotRecognized else state.message
+                            message = if (noTracking) DockMessage.TrackingNotRecognized else state.message,
+                            captureStatus = if (noTracking) CaptureStatus.Failure else state.captureStatus
                         )
                     }
                     if (noTracking) soundPlayer.playBeep()
@@ -265,7 +269,11 @@ class DockReceivingViewModel @Inject constructor(
                             ))
                         } else {
                             playedBeep = true
-                            state.copy(confirm = c.copy(analyzing = false), message = DockMessage.Text(result.message))
+                            state.copy(
+                                confirm = c.copy(analyzing = false),
+                                message = DockMessage.Text(result.message),
+                                captureStatus = CaptureStatus.Failure
+                            )
                         }
                     }
                     if (playedBeep) soundPlayer.playBeep()
@@ -406,7 +414,7 @@ class DockReceivingViewModel @Inject constructor(
                                     trackingFromBarcode = c.trackingFromBarcode,
                                     autoSubmitConsumed = true
                                 ),
-                                recentlySaved = true
+                                captureStatus = CaptureStatus.Success
                             )
                         }
                         refreshItems(bid)
@@ -414,7 +422,11 @@ class DockReceivingViewModel @Inject constructor(
                     is NetworkResult.Error -> {
                         soundPlayer.playBeep()
                         _uiState.update {
-                            it.copy(confirm = it.confirm?.copy(saving = false), message = DockMessage.Text(result.message))
+                            it.copy(
+                                confirm = it.confirm?.copy(saving = false),
+                                message = DockMessage.Text(result.message),
+                                captureStatus = CaptureStatus.Failure
+                            )
                         }
                     }
                 }
@@ -472,12 +484,17 @@ class DockReceivingViewModel @Inject constructor(
                     is NetworkResult.Loading -> {}
                     is NetworkResult.Success -> {
                         soundPlayer.playSuccess()
-                        _uiState.update { it.copy(recentlySaved = true, confirm = null) }
+                        _uiState.update { it.copy(captureStatus = CaptureStatus.Success, confirm = null) }
                         refreshItems(bid)
                     }
                     is NetworkResult.Error -> {
                         soundPlayer.playBeep()
-                        _uiState.update { it.copy(message = DockMessage.Text(result.message)) }
+                        _uiState.update {
+                            it.copy(
+                                message = DockMessage.Text(result.message),
+                                captureStatus = CaptureStatus.Failure
+                            )
+                        }
                     }
                 }
             }
