@@ -5,8 +5,10 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.pda.app.data.NetworkResult
+import com.pda.app.data.api.model.ActiveCustomer
 import com.pda.app.data.api.model.CreateItemRequest
 import com.pda.app.data.prefs.UserPreferences
+import com.pda.app.data.repository.CustomerRepository
 import com.pda.app.data.repository.ReceivingRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,6 +25,7 @@ import javax.inject.Inject
 @HiltViewModel
 class DockReceivingViewModel @Inject constructor(
     private val repo: ReceivingRepository,
+    private val customerRepo: CustomerRepository,
     private val encoder: ImageEncoder,
     private val barcodeDecoder: BarcodeDecoder,
     private val prefs: UserPreferences,
@@ -35,6 +38,9 @@ class DockReceivingViewModel @Inject constructor(
 
     private val warehouseId: Int? =
         savedStateHandle.get<String>("warehouseId")?.toIntOrNull()
+
+    /** 对齐 web：进页拉活跃客户，用 UF 编码解析真实客户名。 */
+    private var activeCustomers: List<ActiveCustomer> = emptyList()
 
     private val _uiState = MutableStateFlow(DockReceivingUiState())
     val uiState: StateFlow<DockReceivingUiState> = _uiState.asStateFlow()
@@ -58,17 +64,20 @@ class DockReceivingViewModel @Inject constructor(
             repo.createBatch(wid).collect { result ->
                 when (result) {
                     is NetworkResult.Loading -> _uiState.update { it.copy(isBusy = true) }
-                    is NetworkResult.Success -> _uiState.update {
-                        it.copy(
-                            isBusy = false,
-                            phase = Phase.Recording,
-                            inputMethod = method,
-                            batchId = result.data.batchId,
-                            batchNumber = result.data.batchNumber,
-                            items = emptyList(),
-                            // 拍照模式：进入即给一个空草稿，Tracking # 框常驻可见可输。
-                            confirm = if (method == InputMethod.Picture) ConfirmState() else null
-                        )
+                    is NetworkResult.Success -> {
+                        refreshActiveCustomers()
+                        _uiState.update {
+                            it.copy(
+                                isBusy = false,
+                                phase = Phase.Recording,
+                                inputMethod = method,
+                                batchId = result.data.batchId,
+                                batchNumber = result.data.batchNumber,
+                                items = emptyList(),
+                                // 拍照模式：进入即给一个空草稿，Tracking # 框常驻可见可输。
+                                confirm = if (method == InputMethod.Picture) ConfirmState() else null
+                            )
+                        }
                     }
                     is NetworkResult.Error -> _uiState.update {
                         it.copy(isBusy = false, message = DockMessage.Text(result.message))
@@ -87,6 +96,7 @@ class DockReceivingViewModel @Inject constructor(
             // 新照片：清掉上一张的自动识别结果（条码/AI），保留用户手输的运单号。
             val keepTyped = if (prev.trackingAutoFilled) "" else prev.trackingNumber
             val keepCustomer = if (prev.customerAutoFilled) "" else prev.customerName
+            val keepCustomerId = if (prev.customerAutoFilled) null else prev.customerId
             it.copy(
                 confirm = prev.copy(
                     photoFile = file,
@@ -100,6 +110,7 @@ class DockReceivingViewModel @Inject constructor(
                     trackingNumber = keepTyped,
                     trackingAutoFilled = false,
                     customerName = keepCustomer,
+                    customerId = keepCustomerId,
                     customerAutoFilled = false,
                     carrier = "",
                     carrierAutoFilled = false,
@@ -192,7 +203,11 @@ class DockReceivingViewModel @Inject constructor(
                         val carrier = normalizeCarrier(result.data.carrier)
                         // sanitize 已把 FedEx 96 长码收成末 12 位
                         val aiTracking = sanitizeTracking(result.data.trackingNumber)
-                        val customer = result.data.customerName?.trim().orEmpty()
+                        val (resolvedId, resolvedName) = resolveCustomerFromAnalyze(
+                            result.data.customerCode,
+                            result.data.customerName,
+                            activeCustomers
+                        )
                         val fromBarcode = c.barcodeTracking != null
                         // barcodeTracking 已经过 sanitize（含 FedEx 短码）
                         val merged = c.barcodeTracking
@@ -208,12 +223,16 @@ class DockReceivingViewModel @Inject constructor(
                                 trackingNumber = merged,
                                 carrier = if (resolvedCarrier.isNotBlank()) resolvedCarrier else c.carrier,
                                 customerName = when {
-                                    customer.isNotBlank() -> customer
+                                    resolvedName.isNotBlank() -> resolvedName
                                     else -> c.customerName
+                                },
+                                customerId = when {
+                                    resolvedName.isNotBlank() -> resolvedId
+                                    else -> c.customerId
                                 },
                                 trackingAutoFilled = fromBarcode || aiTracking.isNotBlank(),
                                 carrierAutoFilled = resolvedCarrier.isNotBlank(),
-                                customerAutoFilled = customer.isNotBlank(),
+                                customerAutoFilled = resolvedName.isNotBlank(),
                                 trackingFromBarcode = fromBarcode,
                                 rawJson = result.data.raw
                             ),
@@ -255,7 +274,7 @@ class DockReceivingViewModel @Inject constructor(
         _uiState.update { it.copy(confirm = it.confirm?.copy(carrier = v, carrierAutoFilled = false)) }
 
     fun onCustomerNameChanged(v: String) =
-        _uiState.update { it.copy(confirm = it.confirm?.copy(customerName = v, customerAutoFilled = false)) }
+        _uiState.update { it.copy(confirm = it.confirm?.copy(customerName = v, customerId = null, customerAutoFilled = false)) }
 
     fun onConditionChanged(v: String) =
         _uiState.update { it.copy(confirm = it.confirm?.copy(condition = v)) }
@@ -333,6 +352,7 @@ class DockReceivingViewModel @Inject constructor(
             receivingBatchId = bid,
             trackingNumber = tracking.ifBlank { null },
             carrier = c.carrier.ifBlank { null },
+            customerId = c.customerId,
             customerName = customer.ifBlank { null },
             condition = c.condition.ifBlank { null },
             photoPaths = c.photoPath?.let { listOf(it) },
@@ -419,6 +439,20 @@ class DockReceivingViewModel @Inject constructor(
         repo.getItems(batchId).collect { result ->
             if (result is NetworkResult.Success) _uiState.update { it.copy(items = result.data) }
             else if (result is NetworkResult.Error) _uiState.update { it.copy(message = DockMessage.Text(result.message)) }
+        }
+    }
+
+    /** 对齐 web：开批时拉活跃客户；失败降级为空列表（仍可手填客户名）。 */
+    private suspend fun refreshActiveCustomers() {
+        customerRepo.getActiveCustomers().collect { result ->
+            when (result) {
+                is NetworkResult.Loading -> {}
+                is NetworkResult.Success -> activeCustomers = result.data
+                is NetworkResult.Error -> {
+                    Log.w(TAG, "refreshActiveCustomers: ${result.message}")
+                    activeCustomers = emptyList()
+                }
+            }
         }
     }
 

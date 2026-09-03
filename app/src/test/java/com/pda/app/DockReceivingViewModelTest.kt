@@ -76,6 +76,16 @@ private class FakeReceivingRepository(
     }
 }
 
+private class FakeCustomerRepository(
+    private val customers: List<com.pda.app.data.api.model.ActiveCustomer> = emptyList()
+) : com.pda.app.data.repository.CustomerRepository(
+    object : com.pda.app.data.api.CustomerApiService {
+        override suspend fun getCustomers() = error("unused")
+    }
+) {
+    override fun getActiveCustomers() = flowOf(NetworkResult.Success(customers))
+}
+
 private class FakeImageEncoder : ImageEncoder {
     override suspend fun prepareForUpload(file: File) = byteArrayOf(9, 9, 9)
     override suspend fun compress(file: File) = CompressedImage(byteArrayOf(1, 2, 3), "BASE64")
@@ -101,10 +111,12 @@ private class FakeUserPreferences(private var inputMethod: String? = null) : Use
 private fun vm(
     repo: ReceivingRepository,
     warehouseId: String? = "7",
-    barcode: String? = null
+    barcode: String? = null,
+    customers: List<com.pda.app.data.api.model.ActiveCustomer> = emptyList()
 ): DockReceivingViewModel =
     DockReceivingViewModel(
         repo,
+        FakeCustomerRepository(customers),
         FakeImageEncoder(),
         FakeBarcodeDecoder(barcode),
         FakeUserPreferences(),
@@ -186,6 +198,81 @@ class DockReceivingViewModelTest {
         assertTrue(vm.uiState.value.recentlySaved)
         assertEquals("", vm.uiState.value.confirm!!.trackingNumber)
         assertEquals(1, vm.uiState.value.itemCount)
+    }
+
+    @Test
+    fun `onPhotoCaptured resolves unmatched UF code as customerName`() = runTest {
+        val repo = FakeReceivingRepository().apply {
+            createBatchFlow = { flowOf(NetworkResult.Success(BatchInfo(42, "B-001"))) }
+            uploadFlow = { flowOf(NetworkResult.Loading, NetworkResult.Success("/p/abc.jpg")) }
+            analyzeFlow = {
+                flowOf(
+                    NetworkResult.Loading,
+                    NetworkResult.Success(
+                        ShippingAnalysis(
+                            "875972515283",
+                            "FedEx",
+                            null,
+                            "{}",
+                            customerCode = "UF00162-RMA",
+                            customerName = null
+                        )
+                    )
+                )
+            }
+            getItemsFlow = {
+                flowOf(NetworkResult.Success(listOf(
+                    ReceivingItemUi(1, "875972515283", "FedEx", false, "UF00162")
+                )))
+            }
+        }
+        val vm = vm(repo) // empty customer list → unmatched
+        vm.startBatch(); advanceUntilIdle()
+
+        vm.onPhotoCaptured(File("capture.jpg"))
+        advanceUntilIdle()
+
+        assertEquals("UF00162", repo.lastCreateItemReq!!.customerName)
+        assertNull(repo.lastCreateItemReq!!.customerId)
+    }
+
+    @Test
+    fun `onPhotoCaptured matches UF code to customer list name`() = runTest {
+        val repo = FakeReceivingRepository().apply {
+            createBatchFlow = { flowOf(NetworkResult.Success(BatchInfo(42, "B-001"))) }
+            uploadFlow = { flowOf(NetworkResult.Loading, NetworkResult.Success("/p/abc.jpg")) }
+            analyzeFlow = {
+                flowOf(
+                    NetworkResult.Loading,
+                    NetworkResult.Success(
+                        ShippingAnalysis(
+                            "875972515283",
+                            "FedEx",
+                            null,
+                            "{}",
+                            customerCode = "UF00162",
+                            customerName = null
+                        )
+                    )
+                )
+            }
+            getItemsFlow = {
+                flowOf(NetworkResult.Success(listOf(
+                    ReceivingItemUi(1, "875972515283", "FedEx", false, "RMA Technology")
+                )))
+            }
+        }
+        val vm = vm(
+            repo,
+            customers = listOf(com.pda.app.data.api.model.ActiveCustomer(99, "UF00162", "RMA Technology"))
+        )
+        vm.startBatch(); advanceUntilIdle()
+
+        vm.onPhotoCaptured(File("capture.jpg"))
+        advanceUntilIdle()
+
+        assertEquals("RMA Technology", repo.lastCreateItemReq!!.customerName)
+        assertEquals(99L, repo.lastCreateItemReq!!.customerId)
     }
 
     @Test

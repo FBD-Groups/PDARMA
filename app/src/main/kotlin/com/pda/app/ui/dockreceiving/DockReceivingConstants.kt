@@ -1,11 +1,45 @@
 package com.pda.app.ui.dockreceiving
 
+import com.pda.app.data.api.model.ActiveCustomer
+
 /** 抄自 web constants.ts，保持与 RMA web 端一致。 */
 val CARRIERS = listOf("UPS", "FedEx", "USPS", "DHL", "Amazon", "OnTrac", "Other")
 val CONDITIONS = listOf("Good", "Fair", "Damaged", "Unknown")
 
 /** FedEx Ground/SmartPost 扫描长条码：34 位、96 开头；真实运单号为末 12 位（对齐 web carrierDetect）。 */
 private val FEDEX_LONG_BARCODE = Regex("^96\\d{32}$")
+
+/** 标签上常见 `UF00162` 或 `UF00162-RMA`；取前缀 UF+数字做匹配。 */
+private val UF_CODE_PREFIX = Regex("""^(UF\d+)""", RegexOption.IGNORE_CASE)
+
+/**
+ * 对齐 web PhotoTab：优先用 AI 的 customerCode 在活跃客户列表中精确匹配（忽略大小写）；
+ * 未命中则显示规范化后的 UF 编码（如 UF00162）；再没有编码才用 AI 的 customerName。
+ * 返回 (customerId?, displayName)。
+ */
+fun resolveCustomerFromAnalyze(
+    customerCode: String?,
+    customerName: String?,
+    activeCustomers: List<ActiveCustomer>
+): Pair<Long?, String> {
+    val codeKey = normalizeCustomerCode(customerCode)
+    if (codeKey != null) {
+        val match = activeCustomers.firstOrNull { it.code.equals(codeKey, ignoreCase = true) }
+        if (match != null) return match.id to match.name
+        // 列表未命中：仍展示 UF 编码，避免客户栏空白（标签上往往只有编码没有公司名）。
+        return null to codeKey
+    }
+    val name = customerName?.trim().orEmpty()
+    return null to name
+}
+
+/** `UF00162-RMA` → `UF00162`；无 UF 前缀则原样 trim；空则 null。 */
+fun normalizeCustomerCode(raw: String?): String? {
+    val trimmed = raw?.trim().orEmpty()
+    if (trimmed.isEmpty()) return null
+    val uf = UF_CODE_PREFIX.find(trimmed)?.groupValues?.get(1)
+    return (uf ?: trimmed).uppercase()
+}
 
 /**
  * 大小写不敏感匹配 CARRIERS，命中返回标准写法；未命中返回原值（trim 后）；

@@ -139,6 +139,27 @@ class ReceivingRepositoryTest {
     }
 
     @Test
+    fun `analyzeShipping maps customerCode`() = runTest {
+        val api = FakeReceivingApiService(
+            analyzeResp = Response.success(
+                ShippingAnalyzeResponse(
+                    mode = "shipping",
+                    trackingNumber = "875972515283",
+                    carrier = "FedEx",
+                    customerCode = "UF00162",
+                    customerName = null,
+                    raw = "{}"
+                )
+            )
+        )
+        val repo = ReceivingRepository(api)
+
+        val success = repo.analyzeShipping("base64").toList()[1] as NetworkResult.Success
+        assertEquals("UF00162", success.data.customerCode)
+        assertEquals(null, success.data.customerName)
+    }
+
+    @Test
     fun `getItems maps dtos with null-safe defaults`() = runTest {
         val api = FakeReceivingApiService(
             getItemsResp = Response.success(

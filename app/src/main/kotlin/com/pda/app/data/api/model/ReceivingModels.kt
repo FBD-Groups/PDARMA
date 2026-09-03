@@ -20,6 +20,7 @@ data class CreateItemRequest(
     val receivingBatchId: Int,
     val trackingNumber: String? = null,
     val carrier: String? = null,
+    val customerId: Long? = null,
     val customerName: String? = null,
     val condition: String? = null,
     /** 对齐网页 / 后端 PhotoPaths；单张时传 listOf(url)。 */
@@ -43,6 +44,8 @@ data class ShippingAnalyzeResponse(
     val trackingNumber: String? = null,
     val carrier: String? = null,
     val service: String? = null,
+    /** 标签上的 UF+数字客户编码（有编码时 AI 通常不返回 customerName）。 */
+    val customerCode: String? = null,
     val customerName: String? = null,
     val raw: String? = null
 )
@@ -99,6 +102,7 @@ data class ShippingAnalysis(
     val carrier: String?,
     val service: String?,
     val raw: String?,
+    val customerCode: String? = null,
     val customerName: String? = null
 )
 

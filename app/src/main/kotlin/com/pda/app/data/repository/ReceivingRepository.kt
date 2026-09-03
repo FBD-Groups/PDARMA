@@ -93,6 +93,7 @@ open class ReceivingRepository @Inject constructor(
                     carrier = a.carrier,
                     service = a.service,
                     raw = a.raw,
+                    customerCode = a.customerCode,
                     customerName = a.customerName
                 )))
             } else {

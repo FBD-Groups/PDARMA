@@ -5,6 +5,7 @@ import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import com.pda.app.BuildConfig
 import com.pda.app.data.api.AuthApiService
 import com.pda.app.data.api.AuthInterceptor
+import com.pda.app.data.api.CustomerApiService
 import com.pda.app.data.api.ReceivingApiService
 import com.pda.app.data.api.WarehouseApiService
 import com.pda.app.data.session.SessionManager
@@ -68,6 +69,11 @@ object NetworkModule {
     @Singleton
     fun provideWarehouseApiService(retrofit: Retrofit): WarehouseApiService =
         retrofit.create(WarehouseApiService::class.java)
+
+    @Provides
+    @Singleton
+    fun provideCustomerApiService(retrofit: Retrofit): CustomerApiService =
+        retrofit.create(CustomerApiService::class.java)
 
     @Provides
     @Singleton

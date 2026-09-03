@@ -36,6 +36,8 @@ data class ConfirmState(
     val trackingNumber: String = "",
     val carrier: String = "",
     val customerName: String = "",
+    /** UF 编码命中活跃客户时写入，对齐 web customerId。 */
+    val customerId: Long? = null,
     val condition: String = "",
     val rawJson: String? = null,
     val trackingAutoFilled: Boolean = false,
