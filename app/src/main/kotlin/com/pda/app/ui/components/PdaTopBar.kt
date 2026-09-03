@@ -21,11 +21,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.pda.app.BuildConfig
 import com.pda.app.ui.i18n.LocalAppStrings
 
 /**
  * 全应用统一的顶栏，与首页（HomeScreen）顶栏样式一致：primary 底色、48dp 高、内容垂直居中。
- * [onBack] 非空时左侧显示返回箭头。
+ * [onBack] 非空时左侧显示返回箭头。右侧固定显示应用版本号；[trailing] 在版本号左侧。
  */
 @Composable
 fun PdaTopBar(
@@ -70,8 +71,15 @@ fun PdaTopBar(
             if (trailing != null) {
                 Spacer(modifier = Modifier.width(8.dp))
                 trailing()
-                Spacer(modifier = Modifier.width(8.dp))
             }
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "v${BuildConfig.VERSION_NAME}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f),
+                maxLines = 1
+            )
+            Spacer(modifier = Modifier.width(8.dp))
         }
     }
 }

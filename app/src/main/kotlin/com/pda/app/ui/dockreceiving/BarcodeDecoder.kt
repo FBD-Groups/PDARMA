@@ -22,7 +22,7 @@ interface BarcodeDecoder {
  * 用 [expandBarcode] 展开每个原始值后再走正常过滤流程。
  *
  * 规则：
- *  1) 展开后用 [sanitizeTracking] 过滤（去空白/连字符后 8..40 位字母数字、≥6 位数字）；
+ *  1) 展开后用 [sanitizeTracking] 过滤（含 FedEx 96 长码 → 末 12 位短码）；
  *  2) 优先已知承运商前缀（UPS 1Z、USPS 94/92/93/95）；
  *  3) 否则取最长的（运单号通常比路由码长）。
  * 返回 sanitize 后的紧凑串，挑不出返回 null。
@@ -36,6 +36,8 @@ fun pickTrackingBarcode(candidates: List<String>): String? {
     if (valid.isEmpty()) return null
     return valid.firstOrNull { it.startsWith("1Z", ignoreCase = true) }
         ?: valid.firstOrNull { c -> USPS_PREFIXES.any { c.startsWith(it) } }
+        // FedEx 12 位短码优先于其它纯数字（避免误选路由码等）
+        ?: valid.firstOrNull { it.length == 12 && it.all(Char::isDigit) }
         ?: valid.maxByOrNull { it.length }
 }
 

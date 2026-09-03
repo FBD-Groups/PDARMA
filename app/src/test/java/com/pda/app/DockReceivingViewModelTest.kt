@@ -77,6 +77,7 @@ private class FakeReceivingRepository(
 }
 
 private class FakeImageEncoder : ImageEncoder {
+    override suspend fun prepareForUpload(file: File) = byteArrayOf(9, 9, 9)
     override suspend fun compress(file: File) = CompressedImage(byteArrayOf(1, 2, 3), "BASE64")
 }
 

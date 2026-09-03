@@ -110,21 +110,35 @@ class DockReceivingViewModel @Inject constructor(
                 recentlySaved = false
             )
         }
-        // 条码解码走原始全分辨率照片（最准）；上传/AI 走压缩图。三路并行。
+        // 条码解码走原始全分辨率照片；上传走原图（不裁不缩边）；AI 走 MAX_EDGE 压缩图。
         viewModelScope.launch { runBarcode(file) }
         viewModelScope.launch {
-            val img = try {
-                encoder.compress(file)
+            try {
+                val uploadBytes = encoder.prepareForUpload(file)
+                runUpload(uploadBytes, file.name)
+            } catch (e: Exception) {
+                Log.e(TAG, "prepareForUpload: ${e.message}", e)
+                _uiState.update {
+                    it.copy(
+                        confirm = it.confirm?.copy(uploading = false, uploadFailed = true),
+                        message = DockMessage.PhotoProcessingFailed
+                    )
+                }
+            }
+        }
+        viewModelScope.launch {
+            try {
+                val img = encoder.compress(file)
+                runAnalyze(img.base64)
             } catch (e: Exception) {
                 Log.e(TAG, "compress: ${e.message}", e)
                 _uiState.update {
-                    it.copy(confirm = it.confirm?.copy(uploading = false, analyzing = false, uploadFailed = true),
-                        message = DockMessage.PhotoProcessingFailed)
+                    it.copy(
+                        confirm = it.confirm?.copy(analyzing = false),
+                        message = DockMessage.PhotoProcessingFailed
+                    )
                 }
-                return@launch
             }
-            launch { runUpload(img.bytes, file.name) }
-            launch { runAnalyze(img.base64) }
         }
     }
 
@@ -175,22 +189,30 @@ class DockReceivingViewModel @Inject constructor(
                 is NetworkResult.Success -> {
                     _uiState.update { state ->
                         val c = state.confirm ?: return@update state
-                        val aiTracking = sanitizeTracking(result.data.trackingNumber)
                         val carrier = normalizeCarrier(result.data.carrier)
+                        // sanitize 已把 FedEx 96 长码收成末 12 位
+                        val aiTracking = sanitizeTracking(result.data.trackingNumber)
                         val customer = result.data.customerName?.trim().orEmpty()
                         val fromBarcode = c.barcodeTracking != null
-                        val merged = c.barcodeTracking ?: aiTracking.ifBlank { c.trackingNumber }
+                        // barcodeTracking 已经过 sanitize（含 FedEx 短码）
+                        val merged = c.barcodeTracking
+                            ?: aiTracking.ifBlank { shortenFedExTracking(c.trackingNumber.replace("\\s+".toRegex(), "")) }
+                        val resolvedCarrier = when {
+                            carrier.isNotBlank() -> carrier
+                            wasFedExLongBarcode(result.data.trackingNumber) -> "FedEx"
+                            else -> c.carrier
+                        }
                         state.copy(
                             confirm = c.copy(
                                 analyzing = false,
                                 trackingNumber = merged,
-                                carrier = if (carrier.isNotBlank()) carrier else c.carrier,
+                                carrier = if (resolvedCarrier.isNotBlank()) resolvedCarrier else c.carrier,
                                 customerName = when {
                                     customer.isNotBlank() -> customer
                                     else -> c.customerName
                                 },
                                 trackingAutoFilled = fromBarcode || aiTracking.isNotBlank(),
-                                carrierAutoFilled = carrier.isNotBlank(),
+                                carrierAutoFilled = resolvedCarrier.isNotBlank(),
                                 customerAutoFilled = customer.isNotBlank(),
                                 trackingFromBarcode = fromBarcode,
                                 rawJson = result.data.raw
@@ -274,7 +296,7 @@ class DockReceivingViewModel @Inject constructor(
     private fun beginSaveWithDuplicateCheck() {
         val state = _uiState.value
         val c = state.confirm ?: return
-        val tracking = c.trackingNumber.replace("\\s+".toRegex(), "")
+        val tracking = shortenFedExTracking(c.trackingNumber.replace("\\s+".toRegex(), ""))
         if (tracking.isBlank() && c.photoPath == null) return
         if (tracking.isBlank()) {
             // 无运单号：跳过查重，直接存（needsReview）。
@@ -304,7 +326,7 @@ class DockReceivingViewModel @Inject constructor(
         val state = _uiState.value
         val c = state.confirm ?: return
         val bid = state.batchId ?: return
-        val tracking = c.trackingNumber.replace("\\s+".toRegex(), "")
+        val tracking = shortenFedExTracking(c.trackingNumber.replace("\\s+".toRegex(), ""))
         if (tracking.isBlank() && c.photoPath == null) return
         val customer = c.customerName.trim()
         val req = CreateItemRequest(
@@ -338,20 +360,22 @@ class DockReceivingViewModel @Inject constructor(
 
     /** 扫码模式：直接用运单号建条目（无照片，source=Barcode），成功后刷新列表。 */
     fun scanItem(tracking: String) {
-        val t = tracking.replace("\\s+".toRegex(), "")
+        val compact = tracking.replace("\\s+".toRegex(), "")
+        val t = shortenFedExTracking(sanitizeTracking(compact).ifBlank { compact })
         if (t.isBlank()) return
         val bid = _uiState.value.batchId ?: return
+        val carrier = if (wasFedExLongBarcode(compact)) "FedEx" else null
         viewModelScope.launch {
             repo.isDuplicateTracking(t).collect { result ->
                 when (result) {
                     is NetworkResult.Loading -> {}
                     is NetworkResult.Success -> {
                         if (result.data) {
-                            // 扫码模式无确认草稿时，用临时 confirm 承载对话框；确认后走 performSave。
                             _uiState.update {
                                 it.copy(
                                     confirm = ConfirmState(
                                         trackingNumber = t,
+                                        carrier = carrier.orEmpty(),
                                         trackingFromBarcode = true,
                                         pendingDuplicateTracking = t,
                                         autoSubmitConsumed = true
@@ -359,19 +383,20 @@ class DockReceivingViewModel @Inject constructor(
                                 )
                             }
                         } else {
-                            createScanItem(bid, t)
+                            createScanItem(bid, t, carrier)
                         }
                     }
-                    is NetworkResult.Error -> createScanItem(bid, t)
+                    is NetworkResult.Error -> createScanItem(bid, t, carrier)
                 }
             }
         }
     }
 
-    private fun createScanItem(bid: Int, tracking: String) {
+    private fun createScanItem(bid: Int, tracking: String, carrier: String? = null) {
         val req = CreateItemRequest(
             receivingBatchId = bid,
             trackingNumber = tracking,
+            carrier = carrier,
             photoPaths = null,
             source = "Barcode",
             needsReview = false

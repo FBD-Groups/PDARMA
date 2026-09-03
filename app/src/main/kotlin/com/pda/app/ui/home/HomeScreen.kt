@@ -134,6 +134,13 @@ fun HomeScreen(
                         modifier = Modifier.weight(1f)
                     )
 
+                    Text(
+                        text = "v${com.pda.app.BuildConfig.VERSION_NAME}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f),
+                        maxLines = 1
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
                     IconButton(
                         onClick = {
                             viewModel.logout()

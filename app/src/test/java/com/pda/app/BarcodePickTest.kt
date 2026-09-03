@@ -53,6 +53,12 @@ class BarcodePickTest {
     }
 
     @Test
+    fun `FedEx long 96 barcode shortens to 12-digit short code`() {
+        val picked = pickTrackingBarcode(listOf("9622013700009956233900792695417702"))
+        assertEquals("792695417702", picked)
+    }
+
+    @Test
     fun `strips AIM prefix from plain Code 128 UPS tracking`() {
         // AIM prefix ]C1 followed directly by UPS 1Z tracking
         val picked = pickTrackingBarcode(listOf("]C11Z999AA10123456784"))

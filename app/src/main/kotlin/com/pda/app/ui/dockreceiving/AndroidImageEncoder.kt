@@ -19,38 +19,61 @@ import javax.inject.Singleton
 @Singleton
 class AndroidImageEncoder @Inject constructor() : ImageEncoder {
 
+    /**
+     * 存档：直接用相机 JPEG 原文件，不缩边、不裁切（预览改 FIT_CENTER 后 Capture 也是完整 FOV）。
+     * 对齐网页「按原始分辨率保存」；仅当体积过大时再轻量压缩。
+     */
+    override suspend fun prepareForUpload(file: File): ByteArray = withContext(Dispatchers.IO) {
+        val original = file.readBytes()
+        if (original.size <= MAX_UPLOAD_BYTES) return@withContext original
+        // 超 3MB：转正后按质量阶梯 / 必要时缩到 2560（与网页兜底一致），仍不裁切。
+        encodeFullFrame(file, softMaxEdge = UPLOAD_SOFT_MAX_EDGE)
+    }
+
     override suspend fun compress(file: File): CompressedImage = withContext(Dispatchers.IO) {
-        // 1) bounds-only decode to read source dimensions
+        val bytes = encodeFullFrame(file, softMaxEdge = MAX_EDGE, quality = JPEG_QUALITY)
+        CompressedImage(bytes = bytes, base64 = Base64.getEncoder().encodeToString(bytes))
+    }
+
+    private fun encodeFullFrame(
+        file: File,
+        softMaxEdge: Int,
+        quality: Int = UPLOAD_JPEG_QUALITY
+    ): ByteArray {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(file.absolutePath, bounds)
         val srcW = bounds.outWidth.coerceAtLeast(1)
         val srcH = bounds.outHeight.coerceAtLeast(1)
 
-        // 2) downsample on decode
         val decodeOpts = BitmapFactory.Options().apply {
-            inSampleSize = calculateInSampleSize(srcW, srcH, MAX_EDGE)
+            inSampleSize = calculateInSampleSize(srcW, srcH, softMaxEdge)
         }
         val decoded = BitmapFactory.decodeFile(file.absolutePath, decodeOpts)
             ?: throw IllegalStateException("无法读取照片文件")
 
-        // 2.5) 套用 EXIF 方向。BitmapFactory 不会读 EXIF，相机拍出的 JPEG 多带"旋转 90°"
-        // 标记；不转正会把躺倒的图发给 AI，运单号识别率骤降。转正后丢弃原图（已含在 oriented 内）。
         val oriented = applyExifOrientation(decoded, file.absolutePath)
-
-        // 3) precise scale to MAX_EDGE longest edge（用转正后的尺寸，90/270 时宽高已对调）
-        val (targetW, targetH) = scaledSize(oriented.width, oriented.height, MAX_EDGE)
+        val (targetW, targetH) = scaledSize(oriented.width, oriented.height, softMaxEdge)
         val scaled = if (targetW != oriented.width || targetH != oriented.height) {
             Bitmap.createScaledBitmap(oriented, targetW, targetH, true)
         } else oriented
 
-        // 4) JPEG encode
-        val out = ByteArrayOutputStream()
-        scaled.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)
+        fun toJpeg(q: Int): ByteArray {
+            val out = ByteArrayOutputStream()
+            scaled.compress(Bitmap.CompressFormat.JPEG, q, out)
+            return out.toByteArray()
+        }
+
+        var bytes = toJpeg(quality)
+        if (softMaxEdge > MAX_EDGE && bytes.size > MAX_UPLOAD_BYTES) {
+            for (q in listOf(85, 75, 65)) {
+                bytes = toJpeg(q)
+                if (bytes.size <= MAX_UPLOAD_BYTES) break
+            }
+        }
+
         if (scaled !== oriented) scaled.recycle()
         oriented.recycle()
-
-        val bytes = out.toByteArray()
-        CompressedImage(bytes = bytes, base64 = Base64.getEncoder().encodeToString(bytes))
+        return bytes
     }
 
     /**
@@ -79,6 +102,12 @@ class AndroidImageEncoder @Inject constructor() : ImageEncoder {
         val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
         if (rotated !== bitmap) bitmap.recycle()
         return rotated
+    }
+
+    companion object {
+        private const val MAX_UPLOAD_BYTES = 3 * 1024 * 1024
+        private const val UPLOAD_SOFT_MAX_EDGE = 2560
+        private const val UPLOAD_JPEG_QUALITY = 95
     }
 }
 

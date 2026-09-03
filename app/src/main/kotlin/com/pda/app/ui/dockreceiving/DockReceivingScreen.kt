@@ -352,34 +352,25 @@ private fun RecordingContent(
     onCustomerNameChange: (String) -> Unit,
     onConditionChange: (String) -> Unit
 ) {
-    // 单一结构（两态一致，相机绝不跳动）：
-    //  · 状态栏固定在顶
-    //  · 中间区域占满剩余空间，承载确认字段（瞄准态为空），可滚动；它把相机顶到底
-    //  · 相机固定高度，永远贴在最底部、紧挨下方按钮
+    // 字段区优先占位（tracking + customer 始终可见），相机吃剩余高度。
+    // 以前相机固定 240dp 会把确认区挤到只剩一栏。
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        Column(
-            modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())
-        ) {
-            state.confirm?.let { confirm ->
-                ConfirmFields(
-                    confirm = confirm,
-                    onTrackingChange = onTrackingChange,
-                    onCarrierChange = onCarrierChange,
-                    onCustomerNameChange = onCustomerNameChange,
-                    onConditionChange = onConditionChange
-                )
-            }
+        state.confirm?.let { confirm ->
+            ConfirmFields(
+                confirm = confirm,
+                onTrackingChange = onTrackingChange,
+                onCarrierChange = onCarrierChange,
+                onCustomerNameChange = onCustomerNameChange,
+                onConditionChange = onConditionChange
+            )
         }
 
-        Spacer(Modifier.height(8.dp))
-        // 相机区域套 Box：识别出运单号后在预览顶部浮动显示，小屏不再被字段遮住。
-        Box(modifier = Modifier.fillMaxWidth()) {
+        Spacer(modifier = Modifier.height(8.dp))
+        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
             CameraCapture(
-                modifier = Modifier.fillMaxWidth(),
-                previewHeight = 240.dp,
+                modifier = Modifier.fillMaxSize(),
                 onPhotoCaptured = onPhotoCaptured
             )
-            // 有已自动识别的运单号时（条码或 AI），浮在预览顶部
             val displayTracking = state.confirm?.let { c ->
                 (c.barcodeTracking ?: c.trackingNumber.takeIf { c.trackingAutoFilled })
                     ?.takeIf { it.isNotBlank() }
@@ -587,7 +578,6 @@ private fun ScanBottomBar(onCloseBatch: () -> Unit) {
 @Composable
 private fun CameraCapture(
     modifier: Modifier = Modifier,
-    previewHeight: Dp = 320.dp,
     onPhotoCaptured: (File) -> Unit
 ) {
     val context = LocalContext.current
@@ -608,7 +598,7 @@ private fun CameraCapture(
     }
 
     if (!hasPermission) {
-        Box(modifier = modifier.height(200.dp), contentAlignment = Alignment.Center) {
+        Box(modifier = modifier, contentAlignment = Alignment.Center) {
             Text(
                 LocalAppStrings.current.dock_cameraPermission,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -620,10 +610,7 @@ private fun CameraCapture(
     val controller = remember {
         LifecycleCameraController(context).apply {
             cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-            // 拍前等对焦/曝光（3A）收敛再出片，减少糊片，运单号更清晰。
-            // 点按预览对焦由 PreviewView+controller 默认开启（isTapToFocusEnabled 默认 true）。
             imageCaptureMode = ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY
-            // Preview is always enabled when bound to PreviewView; only configure capture.
             setEnabledUseCases(CameraController.IMAGE_CAPTURE)
         }
     }
@@ -637,20 +624,21 @@ private fun CameraCapture(
     }
 
     Column(modifier = modifier) {
-        // 预览固定高度，大小恒定（不随上方内容伸缩）；快门紧跟其下。
+        // 预览吃满父布局剩余高度（字段区已优先占位），最低 120dp。
         AndroidView(
             factory = { ctx ->
                 PreviewView(ctx).apply {
-                    // Some devices/emulators render black preview unless using COMPATIBLE.
                     implementationMode = PreviewView.ImplementationMode.COMPATIBLE
-                    scaleType = PreviewView.ScaleType.FILL_CENTER
+                    scaleType = PreviewView.ScaleType.FIT_CENTER
                     this.controller = controller
                 }
             },
-            modifier = Modifier.fillMaxWidth().height(previewHeight)
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .heightIn(min = 120.dp)
         )
-        Spacer(Modifier.height(12.dp))
-        // 设备端稳后快门变主色（就绪），晃动时为灰色——提示用户拿稳再拍，减少糊片。
+        Spacer(modifier = Modifier.height(8.dp))
         val steady = rememberCameraSteady()
         Box(modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp), contentAlignment = Alignment.Center) {
             ShutterButton(

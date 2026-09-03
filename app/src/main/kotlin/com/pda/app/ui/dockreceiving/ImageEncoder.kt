@@ -14,6 +14,11 @@ data class CompressedImage(val bytes: ByteArray, val base64: String) {
 }
 
 interface ImageEncoder {
-    /** 读取拍照文件 → 降采样 → 缩放至最长边 MAX_EDGE → JPEG(质量 JPEG_QUALITY) → bytes + base64。 */
+    /**
+     * 存档用：尽量保留拍照原图（不按 MAX_EDGE 裁边/缩边），对齐网页 `captureVideoFrameToFile`。
+     */
+    suspend fun prepareForUpload(file: File): ByteArray
+
+    /** AI 解析用：降采样 → 缩放至最长边 MAX_EDGE → JPEG → bytes + base64。 */
     suspend fun compress(file: File): CompressedImage
 }
