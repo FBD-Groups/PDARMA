@@ -44,6 +44,7 @@ class AppStringsParityTest {
             assertTrue("$name daySummary", s.report_daySummary(2, 5).isNotBlank())
             assertTrue("$name closePrompt", s.dock_closeBatchPrompt(2, 1).isNotBlank())
             assertTrue("$name duplicateBody", s.dock_duplicateBody("1Z999").contains("1Z999"))
+            assertTrue("$name voidConfirmBody", s.batch_voidConfirmBody("T1").contains("T1"))
         }
     }
 

@@ -24,6 +24,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -57,6 +58,12 @@ fun ReceiveReportScreen(
     val strings = LocalAppStrings.current
     val locale = LocalAppLanguage.current.locale
 
+    // 每次进入本页（含从批次详情返回）重新拉件数；已有列表时静默刷新避免闪屏。
+    LaunchedEffect(Unit) {
+        val keep = uiState is ReceiveReportUiState.Success || uiState is ReceiveReportUiState.Empty
+        viewModel.load(showLoading = !keep)
+    }
+
     Scaffold(
         topBar = { PdaTopBar(title = strings.report_title, onBack = onBack) }
     ) { padding ->
@@ -69,7 +76,7 @@ fun ReceiveReportScreen(
                 is ReceiveReportUiState.Error ->
                     Column(modifier = Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(state.message, color = MaterialTheme.colorScheme.error)
-                        TextButton(onClick = viewModel::load) { Text(strings.common_retry) }
+                        TextButton(onClick = { viewModel.load(showLoading = true) }) { Text(strings.common_retry) }
                     }
                 is ReceiveReportUiState.Success ->
                     LazyColumn(modifier = Modifier.fillMaxSize()) {

@@ -68,6 +68,11 @@ object EnglishStrings : AppStrings {
     override val batch_empty = "No items in this batch"
     override val batch_noTracking = "(no tracking #)"
     override val batch_needsReview = "Needs review"
+    override val batch_void = "Void"
+    override val batch_voiding = "Voiding…"
+    override val batch_voidConfirmTitle = "Confirm void"
+    override fun batch_voidConfirmBody(tracking: String) =
+        "Void tracking $tracking? This cannot be undone."
 
     override val report_title = "Receive Report"
     override val report_empty = "No receipts in the last 3 days"

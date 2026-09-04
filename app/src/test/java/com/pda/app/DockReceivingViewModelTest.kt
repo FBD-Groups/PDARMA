@@ -56,6 +56,7 @@ private class FakeReceivingRepository(
     }
     override fun getItems(batchId: Int) = getItemsFlow()
     override fun closeBatch(batchId: Int) = closeFlow()
+    override fun voidItem(receivingItemId: Int) = flowOf(NetworkResult.Success(Unit))
     override fun isDuplicateTracking(trackingNumber: String) = duplicateFlow()
 
     private companion object {
@@ -65,6 +66,7 @@ private class FakeReceivingRepository(
             override suspend fun analyze(req: com.pda.app.data.api.model.AnalyzeRequest) = error("unused")
             override suspend fun createItem(req: CreateItemRequest) = error("unused")
             override suspend fun getItems(batchId: Int) = error("unused")
+            override suspend fun voidItem(id: Int) = error("unused")
             override suspend fun closeBatch(id: Int) = error("unused")
             override suspend fun getBatches(warehouseId: Int?, scanUser: String?, scanDateFrom: String?) = error("unused")
             override suspend fun searchItems(
@@ -394,20 +396,27 @@ class DockReceivingViewModelTest {
     }
 
     @Test
-    fun `barcode result overrides AI tracking and tags source Barcode`() = runTest {
+    fun `AI tracking overrides barcode and tags source AI`() = runTest {
         val repo = FakeReceivingRepository().apply {
             createBatchFlow = { flowOf(NetworkResult.Success(BatchInfo(42, "B-001"))) }
             uploadFlow = { flowOf(NetworkResult.Success("/p/abc.jpg")) }
-            analyzeFlow = { flowOf(NetworkResult.Success(ShippingAnalysis("AI_WRONG_123456", "UPS", null, "{}"))) }
+            analyzeFlow = {
+                flowOf(
+                    NetworkResult.Success(
+                        ShippingAnalysis("792672039657", "FedEx", null, "{}")
+                    )
+                )
+            }
             getItemsFlow = { flowOf(NetworkResult.Success(emptyList())) }
         }
+        // 条码先解出内部 FWD（会被 sanitize 丢掉）；即使 Fake 返回合法 UPS，AI 也应覆盖。
         val vm = vm(repo, barcode = "1Z999AA10123456784")
         vm.startBatch(); advanceUntilIdle()
         vm.onPhotoCaptured(File("capture.jpg")); advanceUntilIdle()
 
         assertEquals(1, repo.createItemCallCount)
-        assertEquals("1Z999AA10123456784", repo.lastCreateItemReq!!.trackingNumber)
-        assertEquals("Barcode", repo.lastCreateItemReq!!.source)
+        assertEquals("792672039657", repo.lastCreateItemReq!!.trackingNumber)
+        assertEquals("AI", repo.lastCreateItemReq!!.source)
     }
 
     @Test
@@ -444,15 +453,20 @@ class DockReceivingViewModelTest {
     }
 
     @Test
-    fun `auto-saves with tracking without waiting for AI customer`() = runTest {
+    fun `auto-saves after AI without requiring customerName`() = runTest {
         val repo = FakeReceivingRepository().apply {
             createBatchFlow = { flowOf(NetworkResult.Success(BatchInfo(42, "B-001"))) }
             uploadFlow = { flowOf(NetworkResult.Success("/p/abc.jpg")) }
-            // AI 一直 Loading：有条码运单号 + 照片上传完成就应入库，不必等 customer。
-            analyzeFlow = { flowOf(NetworkResult.Loading) }
+            analyzeFlow = {
+                flowOf(
+                    NetworkResult.Success(
+                        ShippingAnalysis("1Z999AA10123456784", "UPS", null, "{}", customerName = null)
+                    )
+                )
+            }
             getItemsFlow = {
                 flowOf(NetworkResult.Success(listOf(
-                    ReceivingItemUi(1, "1Z999AA10123456784", "", false)
+                    ReceivingItemUi(1, "1Z999AA10123456784", "UPS", false)
                 )))
             }
         }
@@ -464,7 +478,7 @@ class DockReceivingViewModelTest {
         assertEquals("1Z999AA10123456784", repo.lastCreateItemReq!!.trackingNumber)
         assertNull(repo.lastCreateItemReq!!.customerName)
         assertEquals(listOf("/p/abc.jpg"), repo.lastCreateItemReq!!.photoPaths)
-        assertEquals("Barcode", repo.lastCreateItemReq!!.source)
+        assertEquals("AI", repo.lastCreateItemReq!!.source)
     }
 
     @Test

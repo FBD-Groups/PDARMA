@@ -82,6 +82,10 @@ interface AppStrings {
     val batch_empty: String
     val batch_noTracking: String
     val batch_needsReview: String
+    val batch_void: String
+    val batch_voiding: String
+    val batch_voidConfirmTitle: String
+    fun batch_voidConfirmBody(tracking: String): String
 
     // ── Receive Report ────────────────────────────────────────────────────────
     val report_title: String

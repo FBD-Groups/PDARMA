@@ -34,11 +34,10 @@ class ReceiveReportViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<ReceiveReportUiState>(ReceiveReportUiState.Loading)
     val uiState: StateFlow<ReceiveReportUiState> = _uiState.asStateFlow()
 
-    init {
-        load()
-    }
-
-    fun load() {
+    /**
+     * @param showLoading false 时（从详情返回）保留当前列表，避免整页闪 Loading。
+     */
+    fun load(showLoading: Boolean = true) {
         val wid = warehouseId
         val user = sessionManager.session.value?.user?.username
         if (wid == null || user.isNullOrBlank()) {
@@ -50,7 +49,9 @@ class ReceiveReportViewModel @Inject constructor(
         repo.getReceivedBatches(wid, user, since)
             .onEach { result ->
                 when (result) {
-                    is NetworkResult.Loading -> _uiState.value = ReceiveReportUiState.Loading
+                    is NetworkResult.Loading -> {
+                        if (showLoading) _uiState.value = ReceiveReportUiState.Loading
+                    }
                     is NetworkResult.Success -> {
                         val days = buildReceiveReport(result.data, today)
                         _uiState.value = if (days.isEmpty()) ReceiveReportUiState.Empty
@@ -58,7 +59,10 @@ class ReceiveReportViewModel @Inject constructor(
                     }
                     is NetworkResult.Error -> {
                         Log.w(TAG, "load failed: ${result.message}")
-                        _uiState.value = ReceiveReportUiState.Error(result.message)
+                        // 静默刷新失败时保留旧列表；仅首次/显式加载才盖成 Error
+                        if (showLoading || _uiState.value !is ReceiveReportUiState.Success) {
+                            _uiState.value = ReceiveReportUiState.Error(result.message)
+                        }
                     }
                 }
             }

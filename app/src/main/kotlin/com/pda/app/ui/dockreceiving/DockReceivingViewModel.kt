@@ -158,9 +158,11 @@ class DockReceivingViewModel @Inject constructor(
         }
     }
 
-    /** 本地解出运单号条码：立刻写入 Tracking 栏（不等 AI）；AI 返回后仍以条码为准合并。 */
+    /** 本地解出运单号条码：立刻写入 Tracking 栏（过滤 FWD 等）；AI 返回后以 AI 为准覆盖。 */
     private suspend fun runBarcode(file: File) {
         val tracking = barcodeDecoder.decodeTracking(file)
+            ?.let { sanitizeTracking(it) }
+            ?.ifBlank { null }
         _uiState.update { state ->
             val c = state.confirm ?: return@update state
             if (tracking.isNullOrBlank()) {
@@ -220,13 +222,16 @@ class DockReceivingViewModel @Inject constructor(
                             result.data.customerName,
                             activeCustomers
                         )
-                        val fromBarcode = c.barcodeTracking != null
-                        // barcodeTracking 已经过 sanitize（含 FedEx 短码）
-                        val merged = c.barcodeTracking
-                            ?: aiTracking.ifBlank { shortenFedExTracking(c.trackingNumber.replace("\\s+".toRegex(), "")) }
+                        // AI 有有效运单号则覆盖条码（避免 FWD 等内部码抢先入库）；AI 无号才用条码。
+                        val fromBarcode = aiTracking.isBlank() && c.barcodeTracking != null
+                        val merged = aiTracking.ifBlank {
+                            c.barcodeTracking
+                                ?: shortenFedExTracking(c.trackingNumber.replace("\\s+".toRegex(), ""))
+                        }
                         val resolvedCarrier = when {
                             carrier.isNotBlank() -> carrier
                             wasFedExLongBarcode(result.data.trackingNumber) -> "FedEx"
+                            fromBarcode && wasFedExLongBarcode(c.barcodeTracking) -> "FedEx"
                             else -> c.carrier
                         }
                         noTracking = merged.isBlank()

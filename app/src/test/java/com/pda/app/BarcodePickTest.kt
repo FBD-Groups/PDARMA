@@ -59,6 +59,22 @@ class BarcodePickTest {
     }
 
     @Test
+    fun `prefers FedEx 96 long barcode over FWD internal code`() {
+        val picked = pickTrackingBarcode(
+            listOf(
+                "FWD260823000044",
+                "9622013700009956233900792672039657"
+            )
+        )
+        assertEquals("792672039657", picked)
+    }
+
+    @Test
+    fun `rejects FWD-only candidates as non-tracking`() {
+        assertNull(pickTrackingBarcode(listOf("FWD260823000044")))
+    }
+
+    @Test
     fun `strips AIM prefix from plain Code 128 UPS tracking`() {
         // AIM prefix ]C1 followed directly by UPS 1Z tracking
         val picked = pickTrackingBarcode(listOf("]C11Z999AA10123456784"))

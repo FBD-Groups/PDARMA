@@ -40,5 +40,6 @@ class TrackingSanitizeTest {
         assertEquals("", sanitizeTracking("tracking number not found"))
         assertEquals("", sanitizeTracking("1234"))
         assertEquals("", sanitizeTracking("ABCDEFGHIJ"))
+        assertEquals("", sanitizeTracking("FWD260823000044"))
     }
 }

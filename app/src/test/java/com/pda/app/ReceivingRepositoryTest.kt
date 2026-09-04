@@ -13,6 +13,7 @@ import com.pda.app.data.api.model.ReceivingItemDto
 import com.pda.app.data.api.model.ReceivingItemSearchPage
 import com.pda.app.data.api.model.ShippingAnalyzeResponse
 import com.pda.app.data.api.model.UploadPhotosResponse
+import com.pda.app.data.api.model.VoidItemResponse
 import com.pda.app.data.repository.ReceivingRepository
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
@@ -31,6 +32,7 @@ private class FakeReceivingApiService(
     var analyzeResp: Response<ShippingAnalyzeResponse>? = null,
     var createItemResp: Response<CreateItemResponse>? = null,
     var getItemsResp: Response<List<ReceivingItemDto>>? = null,
+    var voidResp: Response<VoidItemResponse>? = null,
     var closeResp: Response<CloseBatchResponse>? = null,
     var getBatchesResp: Response<List<ReceivingBatchDto>>? = null,
     var searchItemsResp: Response<ReceivingItemSearchPage>? = null,
@@ -41,6 +43,7 @@ private class FakeReceivingApiService(
     override suspend fun analyze(req: AnalyzeRequest) = analyzeResp!!
     override suspend fun createItem(req: CreateItemRequest) = createItemResp!!
     override suspend fun getItems(batchId: Int) = getItemsResp!!
+    override suspend fun voidItem(id: Int) = voidResp!!
     override suspend fun closeBatch(id: Int) = closeResp!!
     override suspend fun getBatches(warehouseId: Int?, scanUser: String?, scanDateFrom: String?) = getBatchesResp!!
     override suspend fun searchItems(
@@ -179,6 +182,33 @@ class ReceivingRepositoryTest {
         assertEquals("", success.data[1].carrier)
         assertEquals("", success.data[1].customerName)
         assertTrue(success.data[1].needsReview)
+    }
+
+    @Test
+    fun `getItems excludes voided status V`() = runTest {
+        val api = FakeReceivingApiService(
+            getItemsResp = Response.success(
+                listOf(
+                    ReceivingItemDto(1, "T-OPEN", "UPS", status = "O"),
+                    ReceivingItemDto(2, "T-VOID", "UPS", status = "V"),
+                    ReceivingItemDto(3, "T-NULL", "FedEx", status = null)
+                )
+            )
+        )
+        val repo = ReceivingRepository(api)
+        val success = repo.getItems(1).toList()[1] as NetworkResult.Success
+        assertEquals(listOf(1, 3), success.data.map { it.receivingItemId })
+    }
+
+    @Test
+    fun `voidItem emits Loading then Success`() = runTest {
+        val api = FakeReceivingApiService(
+            voidResp = Response.success(VoidItemResponse(9, "V"))
+        )
+        val repo = ReceivingRepository(api)
+        val emissions = repo.voidItem(9).toList()
+        assertTrue(emissions[0] is NetworkResult.Loading)
+        assertTrue(emissions[1] is NetworkResult.Success)
     }
 
     @Test

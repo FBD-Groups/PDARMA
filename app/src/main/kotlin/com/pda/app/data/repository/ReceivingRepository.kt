@@ -125,21 +125,36 @@ open class ReceivingRepository @Inject constructor(
         try {
             val resp = api.getItems(batchId)
             if (resp.isSuccessful && resp.body() != null) {
-                val items = resp.body()!!.map {
-                    ReceivingItemUi(
-                        receivingItemId = it.receivingItemId,
-                        trackingNo = it.trackingNo.orEmpty(),
-                        carrier = it.carrier.orEmpty(),
-                        needsReview = it.needsReview ?: false,
-                        customerName = it.customerName.orEmpty()
-                    )
-                }
+                // 作废行（V）从有效列表排除，避免 PDA 重进仍看到已作废件。
+                val items = resp.body()!!
+                    .filter { it.status != "V" }
+                    .map {
+                        ReceivingItemUi(
+                            receivingItemId = it.receivingItemId,
+                            trackingNo = it.trackingNo.orEmpty(),
+                            carrier = it.carrier.orEmpty(),
+                            needsReview = it.needsReview ?: false,
+                            customerName = it.customerName.orEmpty()
+                        )
+                    }
                 emit(NetworkResult.Success(items))
             } else {
                 emit(errorFrom(resp, "Failed to load items"))
             }
         } catch (e: Exception) {
             Log.e(TAG, "getItems: ${e.message}", e)
+            emit(NetworkResult.Error(e.message ?: NETWORK_FAIL))
+        }
+    }.flowOn(Dispatchers.IO)
+
+    open fun voidItem(receivingItemId: Int): Flow<NetworkResult<Unit>> = flow {
+        emit(NetworkResult.Loading)
+        try {
+            val resp = api.voidItem(receivingItemId)
+            if (resp.isSuccessful) emit(NetworkResult.Success(Unit))
+            else emit(errorFrom(resp, "作废失败"))
+        } catch (e: Exception) {
+            Log.e(TAG, "voidItem: ${e.message}", e)
             emit(NetworkResult.Error(e.message ?: NETWORK_FAIL))
         }
     }.flowOn(Dispatchers.IO)

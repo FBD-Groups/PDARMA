@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.update
 import javax.inject.Inject
 
 @HiltViewModel
@@ -50,6 +51,52 @@ class BatchDetailViewModel @Inject constructor(
                     is NetworkResult.Error -> {
                         Log.w(TAG, "load failed: ${result.message}")
                         _uiState.value = BatchDetailUiState.Error(result.message)
+                    }
+                }
+            }
+            .launchIn(viewModelScope)
+    }
+
+    fun messageShown() {
+        _uiState.update { state ->
+            when (state) {
+                is BatchDetailUiState.Success -> state.copy(message = null)
+                else -> state
+            }
+        }
+    }
+
+    /** 确认弹窗后调用：软作废成功则从列表移除。 */
+    fun voidItem(receivingItemId: Int) {
+        val current = _uiState.value
+        if (current !is BatchDetailUiState.Success) return
+        if (current.voidingItemId != null) return
+
+        repo.voidItem(receivingItemId)
+            .onEach { result ->
+                when (result) {
+                    is NetworkResult.Loading -> {
+                        _uiState.update { state ->
+                            if (state is BatchDetailUiState.Success) {
+                                state.copy(voidingItemId = receivingItemId, message = null)
+                            } else state
+                        }
+                    }
+                    is NetworkResult.Success -> {
+                        _uiState.update { state ->
+                            if (state !is BatchDetailUiState.Success) return@update state
+                            val remaining = state.items.filter { it.receivingItemId != receivingItemId }
+                            if (remaining.isEmpty()) BatchDetailUiState.Empty
+                            else state.copy(items = remaining, voidingItemId = null, message = null)
+                        }
+                    }
+                    is NetworkResult.Error -> {
+                        Log.w(TAG, "void failed: ${result.message}")
+                        _uiState.update { state ->
+                            if (state is BatchDetailUiState.Success) {
+                                state.copy(voidingItemId = null, message = result.message)
+                            } else state
+                        }
                     }
                 }
             }

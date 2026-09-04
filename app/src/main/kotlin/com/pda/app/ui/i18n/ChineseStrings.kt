@@ -68,6 +68,10 @@ object ChineseStrings : AppStrings {
     override val batch_empty = "该批次暂无明细"
     override val batch_noTracking = "（无单号）"
     override val batch_needsReview = "需复核"
+    override val batch_void = "作废"
+    override val batch_voiding = "作废中…"
+    override val batch_voidConfirmTitle = "确认作废"
+    override fun batch_voidConfirmBody(tracking: String) = "确认作废运单 $tracking？作废后不可恢复。"
 
     override val report_title = "收货报表"
     override val report_empty = "最近三天无收货"

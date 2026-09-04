@@ -11,6 +11,7 @@ import com.pda.app.data.api.model.ReceivingItemDto
 import com.pda.app.data.api.model.ReceivingItemSearchPage
 import com.pda.app.data.api.model.ShippingAnalyzeResponse
 import com.pda.app.data.api.model.UploadPhotosResponse
+import com.pda.app.data.api.model.VoidItemResponse
 import okhttp3.MultipartBody
 import retrofit2.Response
 import retrofit2.http.Body
@@ -38,6 +39,10 @@ interface ReceivingApiService {
 
     @GET("api/receiving-items")
     suspend fun getItems(@Query("batchId") batchId: Int): Response<List<ReceivingItemDto>>
+
+    /** 软作废 Open 行 → status V；不可恢复。 */
+    @POST("api/receiving-items/{id}/void")
+    suspend fun voidItem(@Path("id") id: Int): Response<VoidItemResponse>
 
     @POST("api/receiving-batches/{id}/close")
     suspend fun closeBatch(@Path("id") id: Int): Response<CloseBatchResponse>

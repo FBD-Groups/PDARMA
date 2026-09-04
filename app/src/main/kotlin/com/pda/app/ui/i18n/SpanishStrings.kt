@@ -68,6 +68,11 @@ object SpanishStrings : AppStrings {
     override val batch_empty = "No hay artículos en este lote"
     override val batch_noTracking = "(sin # de rastreo)"
     override val batch_needsReview = "Requiere revisión"
+    override val batch_void = "Anular"
+    override val batch_voiding = "Anulando…"
+    override val batch_voidConfirmTitle = "Confirmar anulación"
+    override fun batch_voidConfirmBody(tracking: String) =
+        "¿Anular el rastreo $tracking? No se puede deshacer."
 
     override val report_title = "Informe de Recepción"
     override val report_empty = "Sin recepciones en los últimos 3 días"

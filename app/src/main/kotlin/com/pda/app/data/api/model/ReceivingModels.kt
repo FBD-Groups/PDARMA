@@ -72,12 +72,17 @@ data class CreateItemResponse(val receivingItemId: Int)
 data class CloseBatchResponse(val receivingBatchId: Int, val status: String)
 
 @Serializable
+data class VoidItemResponse(val receivingItemId: Int, val status: String)
+
+@Serializable
 data class ReceivingItemDto(
     val receivingItemId: Int,
     val trackingNo: String? = null,
     val carrier: String? = null,
     val customerName: String? = null,
-    val needsReview: Boolean? = null
+    val needsReview: Boolean? = null,
+    /** "O" | "C" | "V"；缺省按 Open 处理。 */
+    val status: String? = null
 )
 
 /** GET /api/receiving-batches 返回的批次行（Receive Report 用）。 */
