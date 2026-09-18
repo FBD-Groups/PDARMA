@@ -64,6 +64,9 @@ object EnglishStrings : AppStrings {
     override val dock_duplicateTitle = "Tracking already exists"
     override fun dock_duplicateBody(tracking: String) = "$tracking was received in the last 10 days. Add it anyway?"
     override val dock_duplicateConfirm = "Add anyway"
+    override val dock_receivingAlertTitle = "Receiving Alert"
+    override fun dock_receivingAlertDescription(tracking: String) = "Tracking $tracking matched a receiving alert. Read the instruction below and confirm:"
+    override val dock_receivingAlertConfirm = "Confirm"
 
     override val batch_empty = "No items in this batch"
     override val batch_noTracking = "(no tracking #)"

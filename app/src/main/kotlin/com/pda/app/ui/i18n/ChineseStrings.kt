@@ -64,6 +64,9 @@ object ChineseStrings : AppStrings {
     override val dock_duplicateTitle = "运单号已存在"
     override fun dock_duplicateBody(tracking: String) = "近 10 天内已录入过 $tracking。仍要加入吗？"
     override val dock_duplicateConfirm = "仍要加入"
+    override val dock_receivingAlertTitle = "收货预警"
+    override fun dock_receivingAlertDescription(tracking: String) = "运单号 $tracking 命中一条收货预警，请阅读以下处置指令并确认："
+    override val dock_receivingAlertConfirm = "确认"
 
     override val batch_empty = "该批次暂无明细"
     override val batch_noTracking = "（无单号）"

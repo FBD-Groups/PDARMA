@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.pda.app.data.NetworkResult
 import com.pda.app.data.prefs.UserPreferences
 import com.pda.app.data.repository.AuthRepository
+import com.pda.app.data.session.CustomerDirectory
 import com.pda.app.data.session.SessionManager
 import com.pda.app.ui.i18n.AppLanguage
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -25,7 +26,8 @@ import javax.inject.Inject
 class LoginViewModel @Inject constructor(
     private val authRepository: AuthRepository,
     private val sessionManager: SessionManager,
-    private val userPreferences: UserPreferences
+    private val userPreferences: UserPreferences,
+    private val customerDirectory: CustomerDirectory
 ) : ViewModel() {
 
     private companion object {
@@ -72,6 +74,9 @@ class LoginViewModel @Inject constructor(
                             password,
                             rememberCredentials
                         )
+                        // 尽量提前预热活跃客户列表；不阻塞跳转到 Home，失败/较慢也有 Dock 消费端的
+                        // ensureLoaded() 兜底（见 CustomerDirectory）。
+                        viewModelScope.launch { customerDirectory.ensureLoaded() }
                         _uiState.value = LoginUiState.Success(result.data.token, result.data.user)
                     }
                     is NetworkResult.Error -> {

@@ -43,6 +43,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -52,6 +53,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -97,7 +99,9 @@ fun DockReceivingScreen(
     }
 
     fun requestExit() {
-        if (uiState.isBusy) return
+        // 收货预警门禁开着期间不允许关批次离开——查询/确认还没走完就走掉，提醒可能永远不会
+        // 展示给操作员。见 docs/pda对齐.md 第 1 节"查询预警期间仍可关闭批次离开"。
+        if (uiState.isBusy || uiState.alertGateActive) return
         if (uiState.phase == Phase.Recording) {
             viewModel.confirmCloseBatch()
         } else {
@@ -135,14 +139,15 @@ fun DockReceivingScreen(
                         onCloseBatch = viewModel::confirmCloseBatch
                     )
                     InputMethod.BarcodeScan -> ScanBottomBar(
+                        alertGateActive = uiState.alertGateActive,
                         onCloseBatch = viewModel::confirmCloseBatch
                     )
                 }
             }
         }
     ) { padding ->
-        // 录货中系统返回 = 关批次后离开（与顶栏返回一致）。
-        BackHandler(enabled = !uiState.isBusy) { requestExit() }
+        // 录货中系统返回 = 关批次后离开（与顶栏返回一致）；收货预警门禁开着期间也不放行。
+        BackHandler(enabled = !uiState.isBusy && !uiState.alertGateActive) { requestExit() }
 
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             when (uiState.phase) {
@@ -191,8 +196,52 @@ fun DockReceivingScreen(
                     }
                 )
             }
+
+            val pendingAlert = uiState.pendingAlert
+            if (pendingAlert != null) {
+                ReceivingAlertDialog(alert = pendingAlert, onConfirm = viewModel::confirmAlertAck)
+            }
         }
     }
+}
+
+/**
+ * 收货预警硬门禁弹窗：PDA 版本不要求打字确认（跟 web 不同——PDA 现场靠屏幕/物理按键操作，
+ * 打字比 web 桌面端麻烦得多），点一下确认按钮即可；Esc / 点遮罩都不放行（[DialogProperties]）。
+ * 见 docs/pda对齐.md 第 1 节。
+ */
+@Composable
+private fun ReceivingAlertDialog(alert: PendingAlertUi, onConfirm: () -> Unit) {
+    val strings = LocalAppStrings.current
+    AlertDialog(
+        onDismissRequest = { /* 硬门禁：不允许点外部/系统返回关闭，见 DialogProperties */ },
+        properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
+        title = {
+            Text(strings.dock_receivingAlertTitle, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+        },
+        text = {
+            Column {
+                Text(strings.dock_receivingAlertDescription(alert.trackingNo))
+                Spacer(Modifier.height(12.dp))
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.errorContainer
+                ) {
+                    Text(
+                        alert.instruction,
+                        modifier = Modifier.padding(12.dp),
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(strings.dock_receivingAlertConfirm)
+            }
+        }
+    )
 }
 
 /**
@@ -377,7 +426,11 @@ private fun RecordingContent(
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
             CameraCapture(
                 modifier = Modifier.fillMaxSize(),
-                onPhotoCaptured = onPhotoCaptured
+                onPhotoCaptured = onPhotoCaptured,
+                // 收货预警门禁开着期间禁用快门——见 docs/pda对齐.md 第 1 节"门禁竞态"。
+                // 命中后弹窗本身是模态的，会挡住底下的触摸；但 checkingAlert 查询期间弹窗还没出现，
+                // 这一步的 enabled 才是真正拦住点击的地方。
+                captureEnabled = !state.alertGateActive
             )
             val displayTracking = state.confirm?.let { c ->
                 (c.barcodeTracking ?: c.trackingNumber.takeIf { c.trackingAutoFilled })
@@ -411,7 +464,8 @@ private fun RecordingBottomBar(
         ) {
             OutlinedButton(
                 onClick = onCloseBatch,
-                enabled = !state.isBusy,
+                // 收货预警门禁开着期间不允许关批次——见 requestExit() 的同一条注释。
+                enabled = !state.isBusy && !state.alertGateActive,
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.weight(1f).height(48.dp)
             ) { Text(strings.dock_close, maxLines = 1) }
@@ -455,7 +509,7 @@ private fun ScanContent(
     onScan: (String) -> Unit
 ) {
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        ScanInputField(onScan = onScan)
+        ScanInputField(alertGateActive = state.alertGateActive, onScan = onScan)
 
         Spacer(Modifier.height(8.dp))
         // 最新的在最上面。
@@ -471,12 +525,21 @@ private fun ScanContent(
 /**
  * 原生 EditText 扫码输入框：聚焦以接收扫码枪硬件输入，但 showSoftInputOnFocus=false 使其
  * **进入/单击都不弹软键盘**；**双击**才显式调出软键盘供手动输入。回车（含扫码枪 Enter）提交。
+ *
+ * 收货预警门禁开着期间：这个原生 View 跟 Compose 的 `enabled=` 机制完全无关，扫码枪的硬件
+ * 按键事件不会因为门禁状态而自己停下来，之前只在 `viewModel.scanItem()` 里挡（ViewModel
+ * 层返回空操作），但这里的 `setOnKeyListener`/`setOnEditorActionListener` 不管 onScan 有没有
+ * 实际生效都会无条件 `setText("")`——运单号被扫入框里、送出去被无声吞掉、输入框又立刻清空，
+ * 操作员在没有任何提示的情况下以为已经录入成功。用 [rememberUpdatedState] 让这两个
+ * 原生监听器（在 `factory` 里只创建一次，闭包默认不会感知后续重组）也能读到门禁的最新值：
+ * 门禁开着时既不调用 onScan()，也不清空文本，运单号原样留在框里，肉眼就能看出没有提交成功。
  */
 @Composable
-private fun ScanInputField(onScan: (String) -> Unit) {
+private fun ScanInputField(alertGateActive: Boolean, onScan: (String) -> Unit) {
     val context = LocalContext.current
     val imm = remember { context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager }
     val hintText = LocalAppStrings.current.dock_scanHint
+    val gateActive = rememberUpdatedState(alertGateActive)
 
     Surface(
         shape = RoundedCornerShape(12.dp),
@@ -498,10 +561,12 @@ private fun ScanInputField(onScan: (String) -> Unit) {
                     // 软键盘 Done 按钮（手动输入时）
                     setOnEditorActionListener { v, actionId, _ ->
                         if (actionId == EditorInfo.IME_ACTION_DONE) {
-                            val t = v.text.toString().trim()
-                            if (t.isNotEmpty()) {
-                                onScan(t)
-                                (v as EditText).setText("")
+                            if (!gateActive.value) {
+                                val t = v.text.toString().trim()
+                                if (t.isNotEmpty()) {
+                                    onScan(t)
+                                    (v as EditText).setText("")
+                                }
                             }
                             showSoftInputOnFocus = false
                             imm.hideSoftInputFromWindow(v.windowToken, 0)
@@ -511,10 +576,12 @@ private fun ScanInputField(onScan: (String) -> Unit) {
                     // DataWedge / 扫码枪发 KEYCODE_ENTER 硬件事件，不走 IME 路径，需单独捕获。
                     setOnKeyListener { _, keyCode, event ->
                         if (event.action == KeyEvent.ACTION_DOWN && keyCode == KeyEvent.KEYCODE_ENTER) {
-                            val t = text.toString().trim()
-                            if (t.isNotEmpty()) {
-                                onScan(t)
-                                setText("")
+                            if (!gateActive.value) {
+                                val t = text.toString().trim()
+                                if (t.isNotEmpty()) {
+                                    onScan(t)
+                                    setText("")
+                                }
                             }
                             true
                         } else false
@@ -535,7 +602,10 @@ private fun ScanInputField(onScan: (String) -> Unit) {
                     setOnTouchListener { _, ev -> gesture.onTouchEvent(ev); false }
                     post { requestFocus() }
                 }
-            }
+            },
+            // 门禁开着时视觉上也调暗，跟快门按钮的处理保持一致——文字变淡但不隐藏，
+            // 操作员能看出"这里暂时不能扫"而不是误以为卡住了。
+            update = { view -> view.alpha = if (alertGateActive) 0.5f else 1f }
         )
     }
 }
@@ -584,13 +654,17 @@ private fun ScanItemRow(item: ReceivingItemUi) {
     }
 }
 
-/** 扫码模式底栏：只有 Close Batch（条目扫码即自动保存，无需 Confirm）。此处始终可点。 */
+/**
+ * 扫码模式底栏：只有 Close Batch（条目扫码即自动保存，无需 Confirm）。
+ * 收货预警门禁开着期间禁用——见 requestExit() 的同一条注释。
+ */
 @Composable
-private fun ScanBottomBar(onCloseBatch: () -> Unit) {
+private fun ScanBottomBar(alertGateActive: Boolean, onCloseBatch: () -> Unit) {
     Surface(tonalElevation = 3.dp) {
         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
             Button(
                 onClick = onCloseBatch,
+                enabled = !alertGateActive,
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth().height(48.dp)
             ) { Text(LocalAppStrings.current.dock_closeBatch, maxLines = 1) }
@@ -602,7 +676,8 @@ private fun ScanBottomBar(onCloseBatch: () -> Unit) {
 @Composable
 private fun CameraCapture(
     modifier: Modifier = Modifier,
-    onPhotoCaptured: (File) -> Unit
+    onPhotoCaptured: (File) -> Unit,
+    captureEnabled: Boolean = true
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -661,6 +736,7 @@ private fun CameraCapture(
         val steady = rememberCameraSteady()
         ShutterButton(
             ready = steady,
+            enabled = captureEnabled,
             onClick = { capturePhoto(context, controller, cameraExecutor, onPhotoCaptured) },
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -713,7 +789,8 @@ private const val STEADY_HOLD_NANOS = 250_000_000L  // 持续稳定 250ms 才算
 private fun ShutterButton(
     ready: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
 ) {
     val ring by animateColorAsState(
         targetValue = if (ready) MaterialTheme.colorScheme.primary.copy(alpha = 0.95f)
@@ -726,7 +803,9 @@ private fun ShutterButton(
             .clip(CircleShape)
             .border(width = 4.dp, color = ring, shape = CircleShape)
             .background(Color.Black.copy(alpha = 0.15f), CircleShape)
-            .clickable(onClick = onClick),
+            // enabled=false（收货预警门禁开着）时点击完全不触发 onClick，不只是变淡好看。
+            .clickable(enabled = enabled, onClick = onClick)
+            .alpha(if (enabled) 1f else 0.4f),
         contentAlignment = Alignment.Center
     ) {
         Box(

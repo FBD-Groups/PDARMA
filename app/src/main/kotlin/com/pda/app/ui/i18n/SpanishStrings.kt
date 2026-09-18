@@ -64,6 +64,9 @@ object SpanishStrings : AppStrings {
     override val dock_duplicateTitle = "El rastreo ya existe"
     override fun dock_duplicateBody(tracking: String) = "$tracking ya se recibió en los últimos 10 días. ¿Agregar de todos modos?"
     override val dock_duplicateConfirm = "Agregar de todos modos"
+    override val dock_receivingAlertTitle = "Alerta de recepción"
+    override fun dock_receivingAlertDescription(tracking: String) = "El rastreo $tracking coincide con una alerta de recepción. Lea la instrucción a continuación y confirme:"
+    override val dock_receivingAlertConfirm = "Confirmar"
 
     override val batch_empty = "No hay artículos en este lote"
     override val batch_noTracking = "(sin # de rastreo)"

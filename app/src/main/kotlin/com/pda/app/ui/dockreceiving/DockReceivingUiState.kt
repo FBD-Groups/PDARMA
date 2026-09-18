@@ -66,6 +66,9 @@ data class ConfirmState(
         get() = !autoSubmitConsumed && canSave && !saving
 }
 
+/** 命中的收货预警，弹窗展示用。见 docs/pda对齐.md 第 1 节。 */
+data class PendingAlertUi(val id: String, val trackingNo: String, val instruction: String)
+
 data class DockReceivingUiState(
     val phase: Phase = Phase.Idle,
     val inputMethod: InputMethod = InputMethod.Picture,
@@ -76,10 +79,31 @@ data class DockReceivingUiState(
     val isBusy: Boolean = false,          // batch-level op (start/close/refresh) in flight
     val message: DockMessage? = null,     // one-shot snackbar marker; cleared via messageShown()
     /** 底部状态提示：自动入库成功 / 失败需重拍；下次拍照清为 Idle。 */
-    val captureStatus: CaptureStatus = CaptureStatus.Idle
+    val captureStatus: CaptureStatus = CaptureStatus.Idle,
+    /**
+     * 从"决定提交这一件"（查重开始）到最终释放（未命中/查询失败/用户确认）全程为 true——
+     * 门禁字段之一，见 [alertGateActive]。**必须从提交最早的一步就锁上**：如果只在
+     * createItem 成功之后才开始锁，createItem 本身那次网络请求（以及它前面的查重请求）
+     * 挂起期间完全不受保护，操作员能在这段窗口里再拍一张/再扫一次，两次 createItem
+     * 并发成功后会竞争同一个 pendingAlert/pendingGateOpen，导致提醒覆盖或丢失。
+     * 见 docs/pda对齐.md 第 1 节"createItem 请求期间仍可开始下一件"。
+     */
+    val submitting: Boolean = false,
+    /** 入库成功后正在查询收货预警——门禁字段之一，见 [alertGateActive]。 */
+    val checkingAlert: Boolean = false,
+    /** 非空表示命中提醒、等用户一键确认——门禁字段之一，见 [alertGateActive]。 */
+    val pendingAlert: PendingAlertUi? = null
 ) {
     val itemCount: Int get() = items.size
     val needsReviewCount: Int get() = items.count { it.needsReview }
+
+    /**
+     * 收货预警门禁：提交中（含查重、createItem、刷新列表、查询提醒）或命中待确认期间为 true。
+     * 开着的时候不允许开始下一次拍照/扫码提交，也不允许关批次离开——见 docs/pda对齐.md 第 1 节
+     * "门禁竞态"，UI 层（快门按钮 enabled、返回/关批次按钮）和 ViewModel 层
+     * （maybeAutoSubmit/scanItem/confirmCloseBatch 入口）都要检查这个字段。
+     */
+    val alertGateActive: Boolean get() = submitting || checkingAlert || pendingAlert != null
 }
 
 /** 拍照录入底部提示（替代 Confirm 按钮）。 */

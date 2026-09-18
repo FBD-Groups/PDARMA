@@ -37,7 +37,10 @@ private class FakeBatchReceivingRepository : ReceivingRepository(
             page: Int,
             pageSize: Int
         ) = error("unused")
-    }
+        override suspend fun matchReceivingAlert(trackingNumber: String) = error("unused")
+        override suspend fun acknowledgeReceivingAlert(id: String) = error("unused")
+    },
+    kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
 ) {
     var getItemsFlow: () -> Flow<NetworkResult<List<ReceivingItemUi>>> = {
         flowOf(

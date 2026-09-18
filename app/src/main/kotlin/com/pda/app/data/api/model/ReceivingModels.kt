@@ -74,6 +74,18 @@ data class CloseBatchResponse(val receivingBatchId: Int, val status: String)
 @Serializable
 data class VoidItemResponse(val receivingItemId: Int, val status: String)
 
+/**
+ * GET /api/receiving-alerts/match / POST .../acknowledge 的返回体。服务端 camelCase
+ * 序列化，`id` 是 Guid 字符串。字段按 PDA 用得上的精简（不需要 serialNumber/rmaNumber/email）。
+ */
+@Serializable
+data class ReceivingAlertDto(
+    val id: String,
+    val trackingNumber: String? = null,
+    val instruction: String? = null,
+    val status: String? = null
+)
+
 @Serializable
 data class ReceivingItemDto(
     val receivingItemId: Int,
@@ -118,6 +130,9 @@ data class ReceivingItemUi(
     val needsReview: Boolean,
     val customerName: String = ""
 )
+
+/** 命中的收货预警（UI 弹窗用，只保留展示需要的字段）。 */
+data class ReceivingAlertUi(val id: String, val instruction: String)
 
 /** 一条已收货批次（Receive Report 用）。receivedAt = 后端 EndTime（关批时间）。 */
 data class ReceivedBatch(

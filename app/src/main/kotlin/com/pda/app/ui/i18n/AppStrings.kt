@@ -77,6 +77,9 @@ interface AppStrings {
     val dock_duplicateTitle: String
     fun dock_duplicateBody(tracking: String): String
     val dock_duplicateConfirm: String
+    val dock_receivingAlertTitle: String
+    fun dock_receivingAlertDescription(tracking: String): String
+    val dock_receivingAlertConfirm: String
 
     // ── Batch Detail ──────────────────────────────────────────────────────────
     val batch_empty: String

@@ -17,6 +17,17 @@ open class CustomerRepository @Inject constructor(
 ) {
     companion object {
         private const val TAG = "PDA/CustomerRepository"
+
+        /** 别名最短长度：短于此长度一律不参与匹配（对齐 web MIN_ALIAS_LENGTH，见 docs/pda对齐.md）。 */
+        private const val MIN_ALIAS_LENGTH = 3
+
+        /** 逗号拆分 → trim → 小写 → 过滤过短值。对齐 web returnClient.ts 的 parseAliasField。 */
+        internal fun parseAliasField(raw: String?): List<String> {
+            if (raw.isNullOrBlank()) return emptyList()
+            return raw.split(",")
+                .map { it.trim().lowercase(java.util.Locale.ROOT) }
+                .filter { it.length >= MIN_ALIAS_LENGTH }
+        }
     }
 
     /**
@@ -30,7 +41,14 @@ open class CustomerRepository @Inject constructor(
             if (resp.isSuccessful && resp.body() != null) {
                 val list = resp.body()!!
                     .filter { it.isActive }
-                    .map { ActiveCustomer(id = it.id, code = it.customerCode, name = it.customerName) }
+                    .map {
+                        ActiveCustomer(
+                            id = it.id,
+                            code = it.customerCode,
+                            name = it.customerName,
+                            aliases = parseAliasField(it.alias)
+                        )
+                    }
                     .filter { it.id > 0 && it.name.isNotBlank() }
                 emit(NetworkResult.Success(list))
             } else {

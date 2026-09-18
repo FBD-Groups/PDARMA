@@ -1,6 +1,7 @@
 package com.pda.app.ui.dockreceiving
 
 import com.pda.app.data.api.model.ActiveCustomer
+import java.util.Locale
 
 /** 抄自 web constants.ts，保持与 RMA web 端一致。 */
 val CARRIERS = listOf("UPS", "FedEx", "USPS", "DHL", "Amazon", "OnTrac", "Other")
@@ -15,9 +16,13 @@ private val INTERNAL_NON_TRACKING_PREFIXES = listOf("FWD")
 /** 标签上常见 `UF00162` 或 `UF00162-RMA`；取前缀 UF+数字做匹配。 */
 private val UF_CODE_PREFIX = Regex("""^(UF\d+)""", RegexOption.IGNORE_CASE)
 
+/** 别名达到这个长度才用裸 contains；更短的走整词边界匹配，降低误伤。对齐 web WHOLE_WORD_MAX_LENGTH。 */
+private const val ALIAS_WHOLE_WORD_MAX_LENGTH = 4
+
 /**
  * 对齐 web PhotoTab：优先用 AI 的 customerCode 在活跃客户列表中精确匹配（忽略大小写）；
- * 未命中则显示规范化后的 UF 编码（如 UF00162）；再没有编码才用 AI 的 customerName。
+ * 未命中则按 AI 的 customerName 走 Alias 匹配（见 [matchCustomerByCodeOrAlias]）；
+ * 都没命中时，有编码就展示规范化后的 UF 编码（如 UF00162），没编码就用 AI 的 customerName 原文。
  * 返回 (customerId?, displayName)。
  */
 fun resolveCustomerFromAnalyze(
@@ -25,15 +30,49 @@ fun resolveCustomerFromAnalyze(
     customerName: String?,
     activeCustomers: List<ActiveCustomer>
 ): Pair<Long?, String> {
+    val match = matchCustomerByCodeOrAlias(customerCode, customerName, activeCustomers)
+    if (match != null) return match.id to match.name
     val codeKey = normalizeCustomerCode(customerCode)
     if (codeKey != null) {
-        val match = activeCustomers.firstOrNull { it.code.equals(codeKey, ignoreCase = true) }
-        if (match != null) return match.id to match.name
-        // 列表未命中：仍展示 UF 编码，避免客户栏空白（标签上往往只有编码没有公司名）。
+        // 编码存在但列表未命中、别名也没命中：仍展示 UF 编码，避免客户栏空白
+        // （标签上往往只有编码没有公司名）。
         return null to codeKey
     }
     val name = customerName?.trim().orEmpty()
     return null to name
+}
+
+/**
+ * customerCode 精确匹配优先（用 [normalizeCustomerCode] 处理 `UF00162-RMA` 这类后缀，
+ * 比 web 原版直接 trim/lowercase 比对更宽容）；没命中再按 customerName 对每个客户的 Alias
+ * 做匹配（长度分档，见 [aliasMatches]）。命中多个不同客户时判未匹配（返回 null），
+ * 避免选错比不选更糟。对齐 web returnClient.ts 的 matchCustomerByCodeOrAlias。
+ */
+fun matchCustomerByCodeOrAlias(
+    rawCode: String?,
+    rawName: String?,
+    activeCustomers: List<ActiveCustomer>
+): ActiveCustomer? {
+    val codeKey = normalizeCustomerCode(rawCode)
+    if (codeKey != null) {
+        val match = activeCustomers.firstOrNull { it.code.equals(codeKey, ignoreCase = true) }
+        if (match != null) return match
+    }
+    val name = rawName?.trim()?.lowercase(Locale.ROOT)
+    if (name.isNullOrEmpty()) return null
+    val hits = activeCustomers.filter { c -> c.aliases.any { aliasMatches(it, name) } }
+    return hits.singleOrNull()
+}
+
+/**
+ * 别名 ≥5 字符用裸 contains；3-4 字符要求整词边界（前后不能紧贴字母/数字），
+ * 避免像 `eco` 这种短词误伤 `ECOLOGY`/`DECOR`。[alias] 已经是 trim+小写过的；
+ * [haystackLower] 也必须已转小写。对齐 web returnClient.ts 的 aliasMatches。
+ */
+fun aliasMatches(alias: String, haystackLower: String): Boolean {
+    if (alias.length > ALIAS_WHOLE_WORD_MAX_LENGTH) return haystackLower.contains(alias)
+    val pattern = "(?<![a-z0-9])${Regex.escape(alias)}(?![a-z0-9])"
+    return Regex(pattern).containsMatchIn(haystackLower)
 }
 
 /** `UF00162-RMA` → `UF00162`；无 UF 前缀则原样 trim；空则 null。 */
